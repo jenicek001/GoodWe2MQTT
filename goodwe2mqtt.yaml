@@ -1,8 +1,8 @@
 mqtt:
-  broker_ip: "192.168.3.100"
+  broker_ip: ""
   broker_port: 1883
-  username: "openhabian"
-  password: "S1AlAKLfGs3wvFmLxCFC"
+  username: ""
+  password: ""
   client_id: goodwe2mqtt
   topic_prefix: "goodwe2mqtt"
   runtime_data_topic_postfix: "runtime_data" # from inverter
@@ -12,10 +12,10 @@ mqtt:
 goodwe:
   poll_interval: 5 # seconds
   inverters:
-  - serial_number: "9010KETU21CW3302"
-    ip_address: "192.168.3.56"
-  - serial_number: "98000ETU223W0252"
-    ip_address: "192.168.3.55"
+  - serial_number: "9010KETXXXXXXXXX"
+    ip_address: "192.168.X.X"
+  - serial_number: "98000ETXXXXXXXXX"
+    ip_address: "192.168.X.X"
 
 logger:
   log_file: /var/log/goodwe2mqtt/goodwe2mqtt.log
