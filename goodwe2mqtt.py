@@ -192,8 +192,17 @@ class Goodwe_MQTT():
     async def read_runtime_data(self):
         start_time = time.time()
 
-        # TODO: add try/except
-        self.runtime_data = await self.inverter.read_runtime_data()
+        try:
+            self.runtime_data = await self.inverter.read_runtime_data()
+        except goodwe.exceptions.MaxRetriesException as e:
+            log.error(f'read_runtime_data {self.serial_number} Error while reading runtime data: {str(e)}')
+            return None
+        except goodwe.exceptions.RequestFailedException as e:
+            log.error(f'read_runtime_data {self.serial_number} Error while reading runtime data: {str(e)}')
+            return None
+        except Exception as e:
+            log.error(f'read_runtime_data {self.serial_number} Error while reading runtime data: {str(e)}')
+            return None
         
         # replace goodwe lib inverter timestamp with iso string
         inverter_timestamp = self.runtime_data['timestamp']
