@@ -1,0 +1,12 @@
+[Unit]
+Description=GoodWe Inverters Config and Runtime Data - MQTT Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/goodwe2mqtt/goodwe2mqtt.sh
+User=goodwe2mqtt
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
