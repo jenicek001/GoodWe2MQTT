@@ -288,6 +288,7 @@ async def main(config):
 
     # start inverter connection and threads
     inverters = []
+    log.info(f'Goodwe2MQTT starting with {len(config["goodwe"]["inverters"])} inverters')
 
     for inverter in config["goodwe"]["inverters"]:
         inv = Goodwe_MQTT(serial_number=inverter["serial_number"], ip_address=inverter["ip_address"], mqtt_broker_ip=config["mqtt"]["broker_ip"], mqtt_broker_port=config["mqtt"]["broker_port"],
