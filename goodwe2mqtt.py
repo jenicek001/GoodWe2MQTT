@@ -314,7 +314,7 @@ def read_config(file_path):
         log.error(f'Error loading YAML file "{file_path}": {e}')
         sys.exit()
     
-
+    return config
     # with open(file_path, "r") as f:
     #     config = yaml.safe_load(f)
     # return config
