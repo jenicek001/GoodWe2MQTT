@@ -1,0 +1,29 @@
+mqtt:
+  broker_ip: "192.168.3.100"
+  broker_port: 1883
+  username: "openhabian"
+  password: "S1AlAKLfGs3wvFmLxCFC"
+  client_id: goodwe2mqtt
+  topic_prefix: "goodwe2mqtt"
+  runtime_data_topic_postfix: "runtime_data" # from inverter
+  control_topic_postfix: "control" # to inverter
+  grid_export_limit_topic_postfix: "grid_export_limit" # from inverter
+
+goodwe:
+  poll_interval: 5 # seconds
+  inverters:
+  - serial_number: "9010KETU21CW3302"
+    ip_address: "192.168.3.56"
+  - serial_number: "98000ETU223W0252"
+    ip_address: "192.168.3.55"
+
+logger:
+  log_file: /var/log/goodwe2mqtt/goodwe2mqtt.log
+  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  log_level: INFO
+  log_to_console: True
+  log_to_file: True
+  log_rotate: True
+  # in bytes
+  log_rotate_size: 1048576
+  log_rotate_count: 5
