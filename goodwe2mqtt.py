@@ -13,6 +13,8 @@ import json
 #from datetime import date, datetime, timedelta
 from dateutil import tz
 from logger import log
+#import aioinflux
+from goodwe.inverter import OperationMode 
 
 config_file = "goodwe2mqtt.yaml"
 
@@ -54,7 +56,8 @@ def get_timezone_aware_local_time():
     return local_time
 
 class Goodwe_MQTT():
-    def __init__(self, serial_number, ip_address, mqtt_broker_ip, mqtt_broker_port, mqtt_username, mqtt_password, mqtt_topic_prefix, mqtt_control_topic_postfix, mqtt_runtime_data_topic_postfix, mqtt_grid_export_limit_topic_postfix, delay_between_polls_seconds):
+    def __init__(self, serial_number, ip_address, mqtt_broker_ip, mqtt_broker_port, mqtt_username, mqtt_password, mqtt_topic_prefix, mqtt_control_topic_postfix, mqtt_runtime_data_topic_postfix,
+                 mqtt_grid_export_limit_topic_postfix, delay_between_polls_seconds): # , influxdb_host, influxdb_port, influxdb_database, influxdb_username, influxdb_password, influxdb_measurement
         self.serial_number = serial_number
         self.ip_address = ip_address
 
@@ -71,9 +74,11 @@ class Goodwe_MQTT():
         self.mqtt_control_topic = f'{mqtt_topic}/{mqtt_control_topic_postfix}'
         self.mqtt_runtime_data_topic = f'{mqtt_topic}/{mqtt_runtime_data_topic_postfix}'
         self.grid_export_limit_topic = f'{mqtt_topic}/{mqtt_grid_export_limit_topic_postfix}'
+        self.operation_mode_topic = f'{mqtt_topic}/operation_mode'
 
         self.inverter = None
         self.runtime_data = None
+        self.operation_mode = None
 
         log.info(self)
 
@@ -160,6 +165,20 @@ class Goodwe_MQTT():
                             log.info(f'mqtt_client_task {self.serial_number} Current inverter grid export limit: {self.grid_export_limit}')
 
                             await self.send_mqtt_export_limit(self.grid_export_limit)
+
+                        elif 'get_operation_mode' in message_payload:
+                            log.info(f'mqtt_client_task {self.serial_number} Getting operation mode from inverter: {message_payload}')
+                            self.operation_mode = await self.get_operation_mode()
+                            log.info(f'mqtt_client_task {self.serial_number} Current operation mode: {self.operation_mode}')
+
+                            operation_mode_response = {}
+                            operation_mode_response.update({'operation_mode':self.operation_mode})
+                            operation_mode_response.update({'serial_number':self.serial_number})
+                            last_seen = get_timezone_aware_local_time()
+                            last_seen_string = last_seen.isoformat()
+                            operation_mode_response.update({'last_seen':last_seen_string})
+
+                            await self.send_mqtt_response(self.operation_mode_topic, operation_mode_response)
 
                         else:
                             log.error(f'mqtt_client_task {self.serial_number} Invalid command action {message_payload}')
@@ -265,12 +284,13 @@ class Goodwe_MQTT():
 
     async def main_loop(self):
         try:
+            # Create InfluxDB client
+#            influxdb_client = aioinflux.InfluxDBClient(db='mydb', host='localhost', port=8086)
+
             while True:
                 log.debug(f'main_loop {self.serial_number} started - awaiting runtime data')
                 await self.read_runtime_data()
                 log.debug(f'main_loop {self.serial_number} runtime data received')
-        #        log.debug(f'Runtime data from inverter: {runtime_data}')
-                # dump_to_json(runtime_data)
 
                 try:
                     # Publish the data to the MQTT broker
@@ -280,11 +300,19 @@ class Goodwe_MQTT():
                 except Exception as e:
                     log.error(f'publish_data(): MQTT sending error while processing message: {str(e)}')
 
-                # if current_grid_export_limit != requested_grid_export_limit:
-                #     await inverter.set_grid_export_limit(requested_grid_export_limit)
-                #     print(f'Grid export limit set: {requested_grid_export_limit}')
-                #     current_grid_export_limit = await inverter.get_grid_export_limit()
-                #     print(f'Current inverter grid export limit: {current_grid_export_limit}')
+                # # Store the data in InfluxDB
+                # try:
+                #     # Create InfluxDB measurement
+                #     measurement = aioinflux.Measurement('my_measurement').tag('serial_number', self.serial_number)
+
+                #     # Add fields to the measurement
+                #     for key, value in self.runtime_data.items():
+                #         measurement.field(key, value)
+
+                #     # Write the measurement to InfluxDB
+                #     await influxdb_client.write(measurement)
+                # except Exception as e:
+                #     log.error(f'Error while writing data to InfluxDB: {str(e)}')
 
                 await asyncio.sleep(self.delay_between_polls_seconds)
         except KeyboardInterrupt:
