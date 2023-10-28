@@ -180,6 +180,27 @@ class Goodwe_MQTT():
 
                             await self.send_mqtt_response(self.operation_mode_topic, operation_mode_response)
 
+                        elif 'set_eco_discharge' in message_payload:
+                            log.info(f'mqtt_client_task {self.serial_number} Setting eco discharge: {message_payload}')
+                            if len(message_payload) > 0:
+                                # MQTT payload: eco_discharge_power_percent:10
+                                try:
+                                    requested_eco_discharge_power_percent_json = json.loads(message_payload)
+                                    requested_eco_discharge_power_percent = int(requested_eco_discharge_power_percent_json['set_eco_discharge'])           
+                                except json.JSONDecodeError:
+                                    log.error(f'mqtt_client_task {self.serial_number} Invalid JSON payload: {message_payload}')
+                                    continue
+                                except KeyError:
+                                    log.error(f'mqtt_client_task {self.serial_number} Missing key in JSON payload: {message_payload}')
+                                    continue
+                                
+                                if requested_eco_discharge_power_percent < 0 or requested_eco_discharge_power_percent > 100:
+                                    log.error(f'mqtt_client_task {self.serial_number} Invalid eco discharge power percent: {requested_eco_discharge_power_percent}')
+                                    continue
+                                
+                                log.debug(f'mqtt_client_task {self.serial_number} Eco discharge set to: {requested_eco_discharge_power_percent}')
+                                await self.inverter.set_operation_mode(operation_mode=OperationMode.ECO_DISCHARGE, eco_mode_power=requested_eco_discharge_power_percent)
+
                         else:
                             log.error(f'mqtt_client_task {self.serial_number} Invalid command action {message_payload}')
             
