@@ -168,17 +168,7 @@ class Goodwe_MQTT():
 
                         elif 'get_operation_mode' in message_payload:
                             log.info(f'mqtt_client_task {self.serial_number} Getting operation mode from inverter: {message_payload}')
-                            self.operation_mode = await self.get_operation_mode()
-                            log.info(f'mqtt_client_task {self.serial_number} Current operation mode: {self.operation_mode}')
-
-                            operation_mode_response = {}
-                            operation_mode_response.update({'operation_mode':self.operation_mode})
-                            operation_mode_response.update({'serial_number':self.serial_number})
-                            last_seen = get_timezone_aware_local_time()
-                            last_seen_string = last_seen.isoformat()
-                            operation_mode_response.update({'last_seen':last_seen_string})
-
-                            await self.send_mqtt_response(self.operation_mode_topic, operation_mode_response)
+                            await self.get_operation_mode()
 
                         elif 'set_eco_discharge' in message_payload:
                             log.info(f'mqtt_client_task {self.serial_number} Setting eco discharge: {message_payload}')
@@ -199,7 +189,10 @@ class Goodwe_MQTT():
                                     continue
                                 
                                 log.debug(f'mqtt_client_task {self.serial_number} Eco discharge set to: {requested_eco_discharge_power_percent}')
-                                await self.inverter.set_operation_mode(operation_mode=OperationMode.ECO_DISCHARGE, eco_mode_power=requested_eco_discharge_power_percent)
+
+                                operation_mode = OperationMode.ECO_DISCHARGE if requested_eco_discharge_power_percent > 0 else OperationMode.GENERAL
+                                await self.inverter.set_operation_mode(operation_mode=operation_mode, eco_mode_power=requested_eco_discharge_power_percent)
+                                await self.get_operation_mode()
 
                         else:
                             log.error(f'mqtt_client_task {self.serial_number} Invalid command action {message_payload}')
@@ -228,6 +221,20 @@ class Goodwe_MQTT():
     async def get_ongrid_battery_dod(self):
         self.ongrid_battery_dod = await self.inverter.get_ongrid_battery_dod()
         log.debug(f'get_ongrid_battery_dod {self.serial_number} On-grid battery DoD: {self.ongrid_battery_dod}')
+
+    async def get_operation_mode(self):
+        log.info(f'mqtt_client_task {self.serial_number} Getting operation mode from inverter...')
+        self.operation_mode = await self.get_operation_mode()
+        log.info(f'mqtt_client_task {self.serial_number} Current operation mode: {self.operation_mode}')
+
+        operation_mode_response = {}
+        operation_mode_response.update({'operation_mode':self.operation_mode})
+        operation_mode_response.update({'serial_number':self.serial_number})
+        last_seen = get_timezone_aware_local_time()
+        last_seen_string = last_seen.isoformat()
+        operation_mode_response.update({'last_seen':last_seen_string})
+
+        await self.send_mqtt_response(self.operation_mode_topic, operation_mode_response)
 
     async def read_runtime_data(self):
         start_time = time.time()
