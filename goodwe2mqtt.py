@@ -207,11 +207,6 @@ class Goodwe_MQTT():
         self.grid_export_limit = await self.inverter.get_grid_export_limit()
         log.debug(f'get_grid_export_limit {self.serial_number}: Current inverter grid export limit: {self.grid_export_limit}')
         return self.grid_export_limit
-    
-    async def get_operation_mode(self):
-        self.operation_mode = await self.inverter.get_operation_mode()
-        log.debug(f'get_oiperation_mode {self.serial_number} Operation mode: {self.operation_mode}')
-        return self.operation_mode
 
     async def set_grid_export_limit(self, requested_grid_export_limit):
         await self.inverter.set_grid_export_limit(requested_grid_export_limit)
@@ -224,7 +219,7 @@ class Goodwe_MQTT():
 
     async def get_operation_mode(self):
         log.info(f'mqtt_client_task {self.serial_number} Getting operation mode from inverter...')
-        self.operation_mode = await self.get_operation_mode()
+        self.operation_mode = await self.inverter.get_operation_mode()
         log.info(f'mqtt_client_task {self.serial_number} Current operation mode: {self.operation_mode}')
 
         operation_mode_response = {}
@@ -235,6 +230,8 @@ class Goodwe_MQTT():
         operation_mode_response.update({'last_seen':last_seen_string})
 
         await self.send_mqtt_response(self.operation_mode_topic, operation_mode_response)
+
+        return self.operation_mode
 
     async def read_runtime_data(self):
         start_time = time.time()
