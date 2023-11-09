@@ -27,3 +27,11 @@ logger:
   # in bytes
   log_rotate_size: 1048576
   log_rotate_count: 5
+
+influxdb:
+  host: "192.168.3.10"
+  port: 8086
+  database: "openhab"
+  username: "openhab"
+  password: "aLv374Yn9VrRy4vOEXPm"
+  measurement: "goodwe"
