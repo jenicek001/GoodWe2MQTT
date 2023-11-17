@@ -312,6 +312,10 @@ class Goodwe_MQTT():
             # Create InfluxDB client
 #            influxdb_client = aioinflux.InfluxDBClient(db='mydb', host='localhost', port=8086)
 
+            log.debug(f'main_loop {self.serial_number} started - requesting settings data')
+            await self.read_settings()
+            log.debug(f'main_loop {self.serial_number} settings data received')
+
             while True:
                 log.debug(f'main_loop {self.serial_number} started - awaiting runtime data')
                 await self.read_runtime_data()
