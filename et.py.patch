@@ -1,0 +1,17 @@
+--- ./goodwe/et.py       2023-11-17 11:10:42.181211731 +0100
++++ et.py       2023-11-17 13:14:36.604958716 +0100
+@@ -265,6 +265,14 @@
+         ByteH("eco_mode_3_switch", 47526, "Eco Mode Group 3 Switch"),
+         EcoModeV1("eco_mode_4", 47527, "Eco Mode Group 4"),
+         ByteH("eco_mode_4_switch", 47530, "Eco Mode Group 4 Switch"),
++
++        Integer("3_phase_feed_power_enable", 47534, "3 Phase Feed Power Enable", "", Kind.AC),
++        Power("r_phase_feed_power_para", 47535, "R Phase Feed Power Para", Kind.GRID),
++        Power("s_phase_feed_power_para", 47536, "S Phase Feed Power Para", Kind.GRID),
++        Power("t_phase_feed_power_para", 47537, "T Phase Feed Power Para", Kind.GRID),
++
++        Integer("ems_power_mode", 47511, "EMS Power Mode", Kind.GRID),
++        Power("ems_power_set", 47512, "EMS Power Set", Kind.AC),
+     )
+
+     # Settings added in ARM firmware 19
