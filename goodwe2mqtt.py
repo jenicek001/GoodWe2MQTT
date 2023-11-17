@@ -272,19 +272,19 @@ class Goodwe_MQTT():
         log.debug(f'read_storage_info {self.serial_number} Storage info: {self.storage_info}')
         return self.storage_info
 
-    async def read_settings(self):
+    async def read_settings_data(self):
         try:
-            self.settings = await self.inverter.read_settings()
+            self.settings = await self.inverter.read_settings_data()
         except goodwe.exceptions.MaxRetriesException as e:
-            log.error(f'read_settings {self.serial_number} Error while reading inverter settings: {str(e)}')
+            log.error(f'read_settings_data {self.serial_number} Error while reading inverter settings: {str(e)}')
             return None
         except goodwe.exceptions.RequestFailedException as e:
-            log.error(f'read_settings {self.serial_number} Error while reading inverter settings: {str(e)}')
+            log.error(f'read_settings_data {self.serial_number} Error while reading inverter settings: {str(e)}')
             return None
         except Exception as e:
-            log.error(f'read_settings {self.serial_number} Error while reading inverter settings: {str(e)}')
+            log.error(f'read_settings_data {self.serial_number} Error while reading inverter settings: {str(e)}')
             return None
-        log.debug(f'read_settings {self.serial_number} Settings: {self.settings}')
+        log.debug(f'read_settings_data {self.serial_number} Settings: {self.settings}')
         return self.settings
 
     async def read_storage_settings(self):
@@ -323,7 +323,7 @@ class Goodwe_MQTT():
 #            influxdb_client = aioinflux.InfluxDBClient(db='mydb', host='localhost', port=8086)
 
             log.debug(f'main_loop {self.serial_number} started - requesting settings data')
-            await self.read_settings()
+            await self.read_settings_data()
             log.debug(f'main_loop {self.serial_number} settings data received')
 
             while True:
