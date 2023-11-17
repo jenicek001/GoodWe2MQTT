@@ -273,7 +273,17 @@ class Goodwe_MQTT():
         return self.storage_info
 
     async def read_settings(self):
-        self.settings = await self.inverter.read_settings()
+        try:
+            self.settings = await self.inverter.read_settings()
+        except goodwe.exceptions.MaxRetriesException as e:
+            log.error(f'read_settings {self.serial_number} Error while reading inverter settings: {str(e)}')
+            return None
+        except goodwe.exceptions.RequestFailedException as e:
+            log.error(f'read_settings {self.serial_number} Error while reading inverter settings: {str(e)}')
+            return None
+        except Exception as e:
+            log.error(f'read_settings {self.serial_number} Error while reading inverter settings: {str(e)}')
+            return None
         log.debug(f'read_settings {self.serial_number} Settings: {self.settings}')
         return self.settings
 
