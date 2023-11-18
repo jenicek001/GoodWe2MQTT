@@ -222,8 +222,12 @@ class Goodwe_MQTT():
                                 if requested_eco_charge_power_percent < 0 or requested_eco_charge_power_percent > 100:
                                     log.error(f'mqtt_client_task {self.serial_number} Invalid eco charge power percent: {requested_eco_charge_power_percent}')
                                     continue
+
+                                if requested_target_battery_soc < 0 or requested_target_battery_soc > 100:
+                                    log.error(f'mqtt_client_task {self.serial_number} Invalid target battery SoC: {requested_target_battery_soc}')
+                                    continue
                                 
-                                log.debug(f'mqtt_client_task {self.serial_number} Eco charge set to: {requested_eco_charge_power_percent}')
+                                log.debug(f'mqtt_client_task {self.serial_number} Eco charge set to: {requested_eco_charge_power_percent}, target battery SoC: {requested_target_battery_soc}')
                                 
                                 try:
                                     await self.inverter.set_operation_mode(operation_mode=OperationMode.ECO_CHARGE, eco_mode_power=requested_eco_charge_power_percent, eco_mode_soc=requested_target_battery_soc)
