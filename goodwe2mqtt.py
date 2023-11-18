@@ -210,7 +210,8 @@ class Goodwe_MQTT():
                                 # MQTT payload: eco_charge_power_percent:10
                                 try:
                                     requested_eco_charge_power_percent_json = json.loads(message_payload)
-                                    requested_eco_charge_power_percent = int(requested_eco_charge_power_percent_json['set_eco_charge'])           
+                                    requested_eco_charge_power_percent = int(requested_eco_charge_power_percent_json['set_eco_charge'])
+                                    requested_target_battery_soc = int(requested_eco_charge_power_percent_json['target_battery_soc'])
                                 except json.JSONDecodeError:
                                     log.error(f'mqtt_client_task {self.serial_number} Invalid JSON payload: {message_payload}')
                                     continue
@@ -225,7 +226,7 @@ class Goodwe_MQTT():
                                 log.debug(f'mqtt_client_task {self.serial_number} Eco charge set to: {requested_eco_charge_power_percent}')
                                 
                                 try:
-                                    await self.inverter.set_operation_mode(operation_mode=OperationMode.ECO_CHARGE, eco_mode_power=requested_eco_charge_power_percent)
+                                    await self.inverter.set_operation_mode(operation_mode=OperationMode.ECO_CHARGE, eco_mode_power=requested_eco_charge_power_percent, eco_mode_soc=requested_target_battery_soc)
                                 except goodwe.exceptions.MaxRetriesException as e:
                                     log.error(f'mqtt_client_task {self.serial_number} Error while setting eco charge: {str(e)}')
                                 except goodwe.exceptions.RequestFailedException as e:
