@@ -171,7 +171,7 @@ class Goodwe_MQTT():
                             await self.get_operation_mode()
 
                         elif 'set_eco_discharge' in message_payload:
-                            log.info(f'mqtt_client_task {self.serial_number} Setting eco discharge: {message_payload}')
+                            log.info(f'mqtt_client_task {self.serial_number} Start discharging battery to grid: {message_payload}')
                             if len(message_payload) > 0:
                                 # MQTT payload: eco_discharge_power_percent:10
                                 try:
@@ -190,9 +190,64 @@ class Goodwe_MQTT():
                                 
                                 log.debug(f'mqtt_client_task {self.serial_number} Eco discharge set to: {requested_eco_discharge_power_percent}')
 
-                                operation_mode = OperationMode.ECO_DISCHARGE if requested_eco_discharge_power_percent > 0 else OperationMode.GENERAL
-                                await self.inverter.set_operation_mode(operation_mode=operation_mode, eco_mode_power=requested_eco_discharge_power_percent)
+                                #operation_mode = OperationMode.ECO_DISCHARGE if requested_eco_discharge_power_percent > 0 else OperationMode.GENERAL
+                                operation_mode = OperationMode.ECO_DISCHARGE
+                                
+                                try:
+                                    await self.inverter.set_operation_mode(operation_mode=operation_mode, eco_mode_power=requested_eco_discharge_power_percent)
+                                except goodwe.exceptions.MaxRetriesException as e:
+                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting eco discharge: {str(e)}')
+                                except goodwe.exceptions.RequestFailedException as e:
+                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting eco discharge: {str(e)}')
+                                except Exception as e:
+                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting eco discharge: {str(e)}')
+
                                 await self.get_operation_mode()
+
+                        elif 'set_eco_charge' in message_payload:
+                            log.info(f'mqtt_client_task {self.serial_number} Start charging battery from grid: {message_payload}')
+                            if len(message_payload) > 0:
+                                # MQTT payload: eco_charge_power_percent:10
+                                try:
+                                    requested_eco_charge_power_percent_json = json.loads(message_payload)
+                                    requested_eco_charge_power_percent = int(requested_eco_charge_power_percent_json['set_eco_charge'])           
+                                except json.JSONDecodeError:
+                                    log.error(f'mqtt_client_task {self.serial_number} Invalid JSON payload: {message_payload}')
+                                    continue
+                                except KeyError:
+                                    log.error(f'mqtt_client_task {self.serial_number} Missing key in JSON payload: {message_payload}')
+                                    continue
+                                
+                                if requested_eco_charge_power_percent < 0 or requested_eco_charge_power_percent > 100:
+                                    log.error(f'mqtt_client_task {self.serial_number} Invalid eco charge power percent: {requested_eco_charge_power_percent}')
+                                    continue
+                                
+                                log.debug(f'mqtt_client_task {self.serial_number} Eco charge set to: {requested_eco_charge_power_percent}')
+                                
+                                try:
+                                    await self.inverter.set_operation_mode(operation_mode=OperationMode.ECO_CHARGE, eco_mode_power=requested_eco_charge_power_percent)
+                                except goodwe.exceptions.MaxRetriesException as e:
+                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting eco charge: {str(e)}')
+                                except goodwe.exceptions.RequestFailedException as e:
+                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting eco charge: {str(e)}')
+                                except Exception as e:
+                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting eco charge: {str(e)}')
+
+                                await self.get_operation_mode()
+
+                        elif 'set_general_operation_mode' in message_payload:
+                            log.info(f'mqtt_client_task {self.serial_number} Setting general operation mode: {message_payload}')
+                    
+                            try:
+                                await self.inverter.set_operation_mode(operation_mode=OperationMode.GENERAL)
+                            except goodwe.exceptions.MaxRetriesException as e:
+                                log.error(f'mqtt_client_task {self.serial_number} Error while setting general operation mode: {str(e)}')
+                            except goodwe.exceptions.RequestFailedException as e:
+                                log.error(f'mqtt_client_task {self.serial_number} Error while setting general operation mode: {str(e)}')
+                            except Exception as e:
+                                log.error(f'mqtt_client_task {self.serial_number} Error while setting general operation mode: {str(e)}')
+
+                            await self.get_operation_mode()
 
                         else:
                             log.error(f'mqtt_client_task {self.serial_number} Invalid command action {message_payload}')
@@ -219,7 +274,18 @@ class Goodwe_MQTT():
 
     async def get_operation_mode(self):
         log.info(f'mqtt_client_task {self.serial_number} Getting operation mode from inverter...')
-        self.operation_mode = await self.inverter.get_operation_mode()
+        try:
+            self.operation_mode = await self.inverter.get_operation_mode()
+        except goodwe.exceptions.MaxRetriesException as e:
+            log.error(f'mqtt_client_task {self.serial_number} Error while getting operation mode: {str(e)}')
+            return None
+        except goodwe.exceptions.RequestFailedException as e:
+            log.error(f'mqtt_client_task {self.serial_number} Error while getting operation mode: {str(e)}')
+            return None
+        except Exception as e:
+            log.error(f'mqtt_client_task {self.serial_number} Error while getting operation mode: {str(e)}')
+            return None
+
         log.info(f'mqtt_client_task {self.serial_number} Current operation mode: {self.operation_mode}')
 
         operation_mode_response = {}
@@ -263,14 +329,20 @@ class Goodwe_MQTT():
         return self.runtime_data
 
     async def read_device_info(self):
-        self.device_info = await self.inverter.read_device_info()
-        log.debug(f'read_device_info {self.serial_number} Device info: {self.device_info}')
-        return self.device_info
+        try:
+            self.device_info = await self.inverter.read_device_info()
+        except goodwe.exceptions.MaxRetriesException as e:
+            log.error(f'read_device_info {self.serial_number} Error while reading inverter device info: {str(e)}')
+            return None
+        except goodwe.exceptions.RequestFailedException as e:
+            log.error(f'read_device_info {self.serial_number} Error while reading inverter device info: {str(e)}')
+            return None
+        except Exception as e:
+            log.error(f'read_device_info {self.serial_number} Error while reading inverter device info: {str(e)}')
+            return None
 
-    async def read_storage_info(self):
-        self.storage_info = await self.inverter.read_storage_info()
-        log.debug(f'read_storage_info {self.serial_number} Storage info: {self.storage_info}')
-        return self.storage_info
+        log.debug(f'read_device_info {self.serial_number} Device info: {self.settings}')
+        return self.device_info
 
     async def read_settings_data(self):
         try:
@@ -284,38 +356,9 @@ class Goodwe_MQTT():
         except Exception as e:
             log.error(f'read_settings_data {self.serial_number} Error while reading inverter settings: {str(e)}')
             return None
+
         log.debug(f'read_settings_data {self.serial_number} Settings: {self.settings}')
         return self.settings
-
-    async def read_storage_settings(self):
-        self.storage_settings = await self.inverter.read_storage_settings()
-        log.debug(f'read_storage_settings {self.serial_number} Storage settings: {self.storage_settings}')
-        return self.storage_settings
-
-    async def read_grid_settings(self):
-        self.grid_settings = await self.inverter.read_grid_settings()
-        log.debug(f'read_grid_settings {self.serial_number} Grid settings: {self.grid_settings}')
-        return self.grid_settings
-
-    async def read_battery_settings(self):
-        self.battery_settings = await self.inverter.read_battery_settings()
-        log.debug(f'read_battery_settings {self.serial_number} Battery settings: {self.battery_settings}')
-        return self.battery_settings
-
-    async def read_battery_info(self):
-        self.battery_info = await self.inverter.read_battery_info()
-        log.debug(f'read_battery_info {self.serial_number} Battery info: {self.battery_info}')
-        return self.battery_info
-
-    async def read_battery_runtime_data(self):
-        self.battery_runtime_data = await self.inverter.read_battery_runtime_data()
-        log.debug(f'read_battery_runtime_data {self.serial_number} Battery runtime data: {self.battery_runtime_data}')
-        return self.battery_runtime_data
-
-    async def read_battery_soc(self):
-        self.battery_soc = await self.inverter.read_battery_soc()
-        log.debug(f'read_battery_soc {self.serial_number} Battery SoC: {self.battery_soc}')
-        return self.battery_soc
 
     async def main_loop(self):
         try:
