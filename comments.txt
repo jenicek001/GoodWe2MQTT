@@ -1,0 +1,22 @@
+UDP protocol on local WiFi:
+echo WIFIKIT-214028-READ | nc -u 192.168.3.48 48899
+returns:
+192.168.3.48,289C6E62D262,Solar-WiFi223W0252
+
+echo -en "\xaa\x55\xc0\x7f\x01\x02\x00\x02\x41" | nc -u 192.168.3.48 8899
+returns aa55 response as described
+
+Based on: https://github.com/tkubec/GoodWe/wiki and https://github.com/marcelblijleven/goodwe
+ET series implementation: https://github.com/marcelblijleven/goodwe/blob/master/goodwe/et.py
+
+AA55 protocol - used in pypi goodwe project: https://github.com/tkubec/GoodWe/wiki/AA55-protocol
+
+ModBus protocol: https://github.com/tkubec/GoodWe/wiki/ModBus-Protocol
+
+GoodWe ET registers: https://github.com/tkubec/GoodWe/wiki/ET-Series-Registers
+
+OpenEMS: https://github.com/OpenEMS/openems/tree/develop/io.openems.edge.goodwe/src/io/openems/edge/goodwe
+
+Home Assistant GoodWe Inverter: https://github.com/mletenay/home-assistant-goodwe-inverter
+
+GoodWe ModBus Protocol PDF: https://downloads.vodnici.net/uploads/wpforo/attachments/483/4349-1GoodweModbusPROTOCOLHybrid-ENV1-3EMseries.pdf
