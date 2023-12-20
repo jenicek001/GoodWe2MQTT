@@ -361,19 +361,23 @@ class Goodwe_MQTT():
                 await self.read_settings_data()
                 log.debug(f'main_loop {self.serial_number} settings data received')
 
-                previous_fast_runtime_data_time = datetime.now() - timedelta(seconds=self.mqtt_fast_runtime_data_interval_seconds)
-                previous_runtime_data_time = datetime.now() - timedelta(seconds=self.mqtt_runtime_data_interval_seconds)
+                # previous_fast_runtime_data_time = datetime.now() - self.mqtt_fast_runtime_data_interval_seconds
+                # previous_runtime_data_time = datetime.now() - self.mqtt_runtime_data_interval_seconds
+
+                next_fast_runtime_data_time = datetime.now()
+                next_runtime_data_time = datetime.now()
 
                 # Create MQTT client and publish the data to the MQTT broker
                 async with aiomqtt.Client(self.mqtt_broker_ip, self.mqtt_broker_port, username=self.mqtt_username, password=self.mqtt_password) as client:
 
                     while True:
+                        next_fast_runtime_data_time = datetime.now() + self.mqtt_fast_runtime_data_interval_seconds
                         log.debug(f'main_loop {self.serial_number} started - awaiting runtime data')
                         await self.read_runtime_data() # read runtime data from inverter
                         log.debug(f'main_loop {self.serial_number} runtime data received')
 
                         # publish fast runtime data
-                        fast_runtime_data_time = datetime.now()
+                        # fast_runtime_data_time = datetime.now()
                         log.debug(f'main_loop {self.serial_number} Publishing fast runtime data to {self.mqtt_fast_runtime_data_topic}')
                         await client.publish(self.mqtt_fast_runtime_data_topic, payload=json.dumps(self.runtime_data))
                         
@@ -394,9 +398,11 @@ class Goodwe_MQTT():
                         # except Exception as e:
                         #     log.error(f'publish_data(): MQTT sending error while processing message: {str(e)}')
 
-                        if (datetime.now() - previous_runtime_data_time).total_seconds() >= self.mqtt_runtime_data_interval_seconds:
+                        #if (datetime.now() - previous_runtime_data_time).total_seconds() >= self.mqtt_runtime_data_interval_seconds.total_seconds():
+                        if datetime.now() >= next_runtime_data_time:
 
-                            previous_runtime_data_time = datetime.now()
+                            next_runtime_data_time = datetime.now() + self.mqtt_runtime_data_interval_seconds
+                            #previous_runtime_data_time = datetime.now()
                             log.debug(f'main_loop {self.serial_number} Publishing runtime data to {self.mqtt_runtime_data_topic}')
                             await client.publish(self.mqtt_runtime_data_topic, payload=json.dumps(self.runtime_data))
 
@@ -413,13 +419,18 @@ class Goodwe_MQTT():
                         #     await influxdb_client.write(measurement)
                         # except Exception as e:
                         #     log.error(f'Error while writing data to InfluxDB: {str(e)}')
+                        # last_loop_duration = fast_runtime_data_time - previous_fast_runtime_data_time
+                        # log.debug(f'main_loop {self.serial_number} last loop duration: {last_loop_duration}')
+                        # sleep_time = (self.mqtt_fast_runtime_data_interval_seconds - last_loop_duration).total_seconds() # wait till next fast runtime data interval
+                        # log.debug(f'main_loop {self.serial_number} sleep time: {sleep_time}')
+                        # previous_fast_runtime_data_time = fast_runtime_data_time
 
-                        sleep_time = self.mqtt_fast_runtime_data_interval_seconds - (fast_runtime_data_time - previous_fast_runtime_data_time).total_seconds() # wait till next fast runtime data interval
-                        previous_fast_runtime_data_time = fast_runtime_data_time
-
-                        if sleep_time.total_seconds() > 0.0:
-                            log.debug(f'main_loop {self.serial_number} sleeping for {sleep_time} seconds')
-                            await asyncio.sleep(sleep_time.total_seconds())
+                        now = datetime.now()
+                        if now < next_fast_runtime_data_time:
+                            # if sleep_time > 0.0:
+                            sleep_time_seconds = (next_fast_runtime_data_time - now).total_seconds()
+                            log.debug(f'main_loop {self.serial_number} sleeping for {sleep_time_seconds} seconds')
+                            await asyncio.sleep(sleep_time_seconds) # wait till next fast runtime data interval
 
             except KeyboardInterrupt:
                 # Disconnect from the MQTT broker
