@@ -351,6 +351,7 @@ class Goodwe_MQTT():
 
     async def main_loop(self):
 
+        # main loop allowing delayed restarts to recover from errors
         while True:
             try:
                 # Create InfluxDB client
@@ -360,21 +361,22 @@ class Goodwe_MQTT():
                 await self.read_settings_data()
                 log.debug(f'main_loop {self.serial_number} settings data received')
 
-                last_fast_runtime_data_time = datetime.now()
-                last_runtime_data_time = datetime.now() - timedelta(seconds=5) # TODO parametrize
+                previous_fast_runtime_data_time = datetime.now() - timedelta(seconds=self.mqtt_fast_runtime_data_interval_seconds)
+                previous_runtime_data_time = datetime.now() - timedelta(seconds=self.mqtt_runtime_data_interval_seconds)
 
-                # Publish the data to the MQTT broker
+                # Create MQTT client and publish the data to the MQTT broker
                 async with aiomqtt.Client(self.mqtt_broker_ip, self.mqtt_broker_port, username=self.mqtt_username, password=self.mqtt_password) as client:
 
                     while True:
                         log.debug(f'main_loop {self.serial_number} started - awaiting runtime data')
-                        await self.read_runtime_data()
+                        await self.read_runtime_data() # read runtime data from inverter
                         log.debug(f'main_loop {self.serial_number} runtime data received')
 
                         # publish fast runtime data
+                        fast_runtime_data_time = datetime.now()
                         log.debug(f'main_loop {self.serial_number} Publishing fast runtime data to {self.mqtt_fast_runtime_data_topic}')
                         await client.publish(self.mqtt_fast_runtime_data_topic, payload=json.dumps(self.runtime_data))
-                        fast_runtime_data_time = datetime.now()
+                        
 
                         # try: # publish fast runtime data
                         #     # Publish the data to the MQTT broker
@@ -392,12 +394,11 @@ class Goodwe_MQTT():
                         # except Exception as e:
                         #     log.error(f'publish_data(): MQTT sending error while processing message: {str(e)}')
 
-                        if (datetime.now() - last_runtime_data_time).total_seconds() >= 5: # TODO parametrize
+                        if (datetime.now() - previous_runtime_data_time).total_seconds() >= self.mqtt_runtime_data_interval_seconds:
 
+                            previous_runtime_data_time = datetime.now()
                             log.debug(f'main_loop {self.serial_number} Publishing runtime data to {self.mqtt_runtime_data_topic}')
                             await client.publish(self.mqtt_runtime_data_topic, payload=json.dumps(self.runtime_data))
-
-                            last_runtime_data_time = datetime.now()
 
                         # # Store the data in InfluxDB
                         # try:
@@ -413,10 +414,10 @@ class Goodwe_MQTT():
                         # except Exception as e:
                         #     log.error(f'Error while writing data to InfluxDB: {str(e)}')
 
-                        sleep_time = self.mqtt_fast_runtime_data_interval_seconds - (fast_runtime_data_time - last_fast_runtime_data_time).total_seconds() # wait till next fast runtime data interval
-                        last_fast_runtime_data_time = fast_runtime_data_time
+                        sleep_time = self.mqtt_fast_runtime_data_interval_seconds - (fast_runtime_data_time - previous_fast_runtime_data_time).total_seconds() # wait till next fast runtime data interval
+                        previous_fast_runtime_data_time = fast_runtime_data_time
 
-                        if sleep_time > 0:
+                        if sleep_time > 0.0:
                             log.debug(f'main_loop {self.serial_number} sleeping for {sleep_time} seconds')
                             await asyncio.sleep(sleep_time)
 
