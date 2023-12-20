@@ -2,8 +2,7 @@ import asyncio
 import aiomqtt # https://sbtinstruments.github.io/aiomqtt/publishing-a-message.html
 import goodwe
 import time
-import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta
 import pytz
 import tzlocal
 import json
@@ -22,7 +21,7 @@ config_file = "goodwe2mqtt.yaml"
 # this function dumps runtime_data to JSON file, filename contains date and time
 def dump_to_json(runtime_data):
     # dump dictionary to file
-    current_time = datetime.datetime.now()
+    current_time = datetime.now()
     inverter_runtime_data_json = json.dumps(runtime_data)
     log.debug(f'JSON: {inverter_runtime_data_json}')
 
@@ -33,7 +32,7 @@ def dump_to_json(runtime_data):
 
 def get_timezone_aware_local_time():
     """Gets the timezone aware local time."""
-    now = datetime.datetime.now()
+    now = datetime.now()
     timezone = tzlocal.get_localzone()
     local_time = pytz.timezone(str(timezone)).localize(now, is_dst=False)
     return local_time
