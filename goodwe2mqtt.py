@@ -55,9 +55,9 @@ class Goodwe_MQTT():
         mqtt_topic = f'{mqtt_topic_prefix}/{self.serial_number}'
         self.mqtt_control_topic = f'{mqtt_topic}/{mqtt_control_topic_postfix}'
         self.mqtt_runtime_data_topic = f'{mqtt_topic}/{mqtt_runtime_data_topic_postfix}'
-        self.mqtt_runtime_data_interval_seconds = timedelta(mqtt_runtime_data_interval_seconds)
+        self.mqtt_runtime_data_interval_seconds = timedelta(seconds=mqtt_runtime_data_interval_seconds)
         self.mqtt_fast_runtime_data_topic = f'{mqtt_topic}/{mqtt_fast_runtime_data_topic_postfix}'
-        self.mqtt_fast_runtime_data_interval_seconds = timedelta(mqtt_fast_runtime_data_interval_seconds)
+        self.mqtt_fast_runtime_data_interval_seconds = timedelta(seconds=mqtt_fast_runtime_data_interval_seconds)
         self.grid_export_limit_topic = f'{mqtt_topic}/{mqtt_grid_export_limit_topic_postfix}'
         self.operation_mode_topic = f'{mqtt_topic}/operation_mode'
 
