@@ -3,6 +3,7 @@ import aiomqtt # https://sbtinstruments.github.io/aiomqtt/publishing-a-message.h
 import goodwe
 import time
 import datetime
+from datetime import timedelta
 import pytz
 import tzlocal
 import json
@@ -30,24 +31,6 @@ def dump_to_json(runtime_data):
     with open(file_name, 'w') as outfile:
         json.dump(runtime_data, outfile)
 
-# async def listen(mqtt_client):
-# #    async with aiomqtt.Client(mqtt_broker_address, mqtt_broker_port, username=mqtt_user, password=mqtt_pwd) as mqtt_client:
-#         async with mqtt_client.messages() as messages:
-#             await mqtt_client.subscribe(f'goodwe/{goodwe_serial_number}/{control_topic}') #"temperature/#""
-#             async for message in messages:
-#                 log.debug(message.payload)
-#                 # if 'grid_export_limit' in message.payload:
-#                 #     requested_grid_export_limit = int(message.payload['grid_export_limit']) #int(message_payload.split(':')[1])
-#                 #     log.debug(f'Requested grid export limit: {requested_grid_export_limit}')
-#                 # else:
-#                 #     log.debug(f'Invalid command action {message.payload}')
-
-# mqtt_client = None
-
-# background_tasks = set()
-
-
-
 def get_timezone_aware_local_time():
     """Gets the timezone aware local time."""
     now = datetime.datetime.now()
@@ -56,8 +39,9 @@ def get_timezone_aware_local_time():
     return local_time
 
 class Goodwe_MQTT():
-    def __init__(self, serial_number, ip_address, mqtt_broker_ip, mqtt_broker_port, mqtt_username, mqtt_password, mqtt_topic_prefix, mqtt_control_topic_postfix, mqtt_runtime_data_topic_postfix, mqtt_fast_runtime_data_topic_postfix,
-                 mqtt_grid_export_limit_topic_postfix, delay_between_polls_seconds): # , influxdb_host, influxdb_port, influxdb_database, influxdb_username, influxdb_password, influxdb_measurement
+    def __init__(self, serial_number, ip_address, mqtt_broker_ip, mqtt_broker_port, mqtt_username, mqtt_password, mqtt_topic_prefix, mqtt_control_topic_postfix, mqtt_runtime_data_topic_postfix, mqtt_runtime_data_interval_seconds,
+                 mqtt_fast_runtime_data_topic_postfix, mqtt_fast_runtime_data_interval_seconds,
+                 mqtt_grid_export_limit_topic_postfix): # , influxdb_host, influxdb_port, influxdb_database, influxdb_username, influxdb_password, influxdb_measurement
         self.serial_number = serial_number
         self.ip_address = ip_address
 
@@ -65,7 +49,6 @@ class Goodwe_MQTT():
         self.mqtt_broker_port = mqtt_broker_port
         self.mqtt_username = mqtt_username
         self.mqtt_password = mqtt_password
-        self.delay_between_polls_seconds = delay_between_polls_seconds
 
         self.grid_export_limit = None
         self.requested_grid_export_limit = None
@@ -73,7 +56,9 @@ class Goodwe_MQTT():
         mqtt_topic = f'{mqtt_topic_prefix}/{self.serial_number}'
         self.mqtt_control_topic = f'{mqtt_topic}/{mqtt_control_topic_postfix}'
         self.mqtt_runtime_data_topic = f'{mqtt_topic}/{mqtt_runtime_data_topic_postfix}'
+        self.mqtt_runtime_data_interval_seconds = mqtt_runtime_data_interval_seconds
         self.mqtt_fast_runtime_data_topic = f'{mqtt_topic}/{mqtt_fast_runtime_data_topic_postfix}'
+        self.mqtt_fast_runtime_data_interval_seconds = mqtt_fast_runtime_data_interval_seconds
         self.grid_export_limit_topic = f'{mqtt_topic}/{mqtt_grid_export_limit_topic_postfix}'
         self.operation_mode_topic = f'{mqtt_topic}/operation_mode'
 
@@ -86,7 +71,7 @@ class Goodwe_MQTT():
         self.mqtt_task = asyncio.ensure_future(self.mqtt_client_task())
 
     def __str__(self):
-        return f'{self.serial_number}, {self.ip_address}, {self.grid_export_limit}, {self.mqtt_broker_ip}, {self.mqtt_broker_port}, {self.mqtt_username}, {"****"}, {self.mqtt_control_topic}, {self.mqtt_runtime_data_topic}, {self.grid_export_limit_topic}, {self.delay_between_polls_seconds}'
+        return f'{self.serial_number}, {self.ip_address}, {self.grid_export_limit}, {self.mqtt_broker_ip}, {self.mqtt_broker_port}, {self.mqtt_username}, {self.mqtt_control_topic}, {self.mqtt_runtime_data_topic}, {self.grid_export_limit_topic}'
 
     async def connect_inverter(self):
         log.info(f'Connecting to inverter {self.serial_number} at {self.ip_address}')
@@ -121,7 +106,6 @@ class Goodwe_MQTT():
 #                await client.publish(self.grid_export_limit_topic, payload=json.dumps(grid_export_limit_response))
 #        except Exception as e:
 #            log.error(f'publish_data(): MQTT sending error while processing message: {str(e)}')
-
 
     async def mqtt_client_task(self):
         log.debug(f'mqtt_client_task: {self.serial_number}')
@@ -367,60 +351,91 @@ class Goodwe_MQTT():
         return self.settings
 
     async def main_loop(self):
-        try:
-            # Create InfluxDB client
-#            influxdb_client = aioinflux.InfluxDBClient(db='mydb', host='localhost', port=8086)
 
-            log.debug(f'main_loop {self.serial_number} started - requesting settings data')
-            await self.read_settings_data()
-            log.debug(f'main_loop {self.serial_number} settings data received')
+        while True:
+            try:
+                # Create InfluxDB client
+    #            influxdb_client = aioinflux.InfluxDBClient(db='mydb', host='localhost', port=8086)
 
-            # Publish the data to the MQTT broker
-            async with aiomqtt.Client(self.mqtt_broker_ip, self.mqtt_broker_port, username=self.mqtt_username, password=self.mqtt_password) as client:
+                log.debug(f'main_loop {self.serial_number} started - requesting settings data')
+                await self.read_settings_data()
+                log.debug(f'main_loop {self.serial_number} settings data received')
 
-                while True:
-                    log.debug(f'main_loop {self.serial_number} started - awaiting runtime data')
-                    await self.read_runtime_data()
-                    log.debug(f'main_loop {self.serial_number} runtime data received')
+                last_fast_runtime_data_time = datetime.now()
+                last_runtime_data_time = datetime.now() - timedelta(seconds=5) # TODO parametrize
 
-                    # try: # publish fast runtime data
-                    #     # Publish the data to the MQTT broker
-                    #     async with aiomqtt.Client(self.mqtt_broker_ip, self.mqtt_broker_port, username=self.mqtt_username, password=self.mqtt_password) as client:
-                    #         log.debug(f'Publishing fast runtime data to {self.mqtt_fast_runtime_data_topic}')
-                    #         await client.publish(self.mqtt_fast_runtime_data_topic, payload=json.dumps(self.runtime_data))
-                    # except Exception as e:
-                    #     log.error(f'publish_data(): MQTT sending error while processing message: {str(e)}')
-                    
-                    # try:
-                    #     # Publish the data to the MQTT broker
-                    #     async with aiomqtt.Client(self.mqtt_broker_ip, self.mqtt_broker_port, username=self.mqtt_username, password=self.mqtt_password) as client:
-                    #         log.debug(f'Publishing runtime data to {self.mqtt_runtime_data_topic}')
-                    #         await client.publish(self.mqtt_runtime_data_topic, payload=json.dumps(self.runtime_data))
-                    # except Exception as e:
-                    #     log.error(f'publish_data(): MQTT sending error while processing message: {str(e)}')
-                    log.debug(f'main_loop {self.serial_number} Publishing runtime data to {self.mqtt_runtime_data_topic}')
-                    await client.publish(self.mqtt_runtime_data_topic, payload=json.dumps(self.runtime_data))
+                # Publish the data to the MQTT broker
+                async with aiomqtt.Client(self.mqtt_broker_ip, self.mqtt_broker_port, username=self.mqtt_username, password=self.mqtt_password) as client:
 
-                    # # Store the data in InfluxDB
-                    # try:
-                    #     # Create InfluxDB measurement
-                    #     measurement = aioinflux.Measurement('my_measurement').tag('serial_number', self.serial_number)
+                    while True:
+                        log.debug(f'main_loop {self.serial_number} started - awaiting runtime data')
+                        await self.read_runtime_data()
+                        log.debug(f'main_loop {self.serial_number} runtime data received')
 
-                    #     # Add fields to the measurement
-                    #     for key, value in self.runtime_data.items():
-                    #         measurement.field(key, value)
+                        # publish fast runtime data
+                        log.debug(f'main_loop {self.serial_number} Publishing fast runtime data to {self.mqtt_fast_runtime_data_topic}')
+                        await client.publish(self.mqtt_fast_runtime_data_topic, payload=json.dumps(self.runtime_data))
+                        fast_runtime_data_time = datetime.now()
 
-                    #     # Write the measurement to InfluxDB
-                    #     await influxdb_client.write(measurement)
-                    # except Exception as e:
-                    #     log.error(f'Error while writing data to InfluxDB: {str(e)}')
+                        # try: # publish fast runtime data
+                        #     # Publish the data to the MQTT broker
+                        #     async with aiomqtt.Client(self.mqtt_broker_ip, self.mqtt_broker_port, username=self.mqtt_username, password=self.mqtt_password) as client:
+                        #         log.debug(f'Publishing fast runtime data to {self.mqtt_fast_runtime_data_topic}')
+                        #         await client.publish(self.mqtt_fast_runtime_data_topic, payload=json.dumps(self.runtime_data))
+                        # except Exception as e:
+                        #     log.error(f'publish_data(): MQTT sending error while processing message: {str(e)}')
+                        
+                        # try:
+                        #     # Publish the data to the MQTT broker
+                        #     async with aiomqtt.Client(self.mqtt_broker_ip, self.mqtt_broker_port, username=self.mqtt_username, password=self.mqtt_password) as client:
+                        #         log.debug(f'Publishing runtime data to {self.mqtt_runtime_data_topic}')
+                        #         await client.publish(self.mqtt_runtime_data_topic, payload=json.dumps(self.runtime_data))
+                        # except Exception as e:
+                        #     log.error(f'publish_data(): MQTT sending error while processing message: {str(e)}')
 
-                    await asyncio.sleep(self.delay_between_polls_seconds)
-        except KeyboardInterrupt:
-            # Disconnect from the MQTT broker
-            self.mqtt_task.cancel()
-            await self.mqtt_task
-            log.error(f'Goodwe_MQTT {self.serial_number} MQTT client disconnected')
+                        if (datetime.now() - last_runtime_data_time).total_seconds() >= 5: # TODO parametrize
+
+                            log.debug(f'main_loop {self.serial_number} Publishing runtime data to {self.mqtt_runtime_data_topic}')
+                            await client.publish(self.mqtt_runtime_data_topic, payload=json.dumps(self.runtime_data))
+
+                            last_runtime_data_time = datetime.now()
+
+                        # # Store the data in InfluxDB
+                        # try:
+                        #     # Create InfluxDB measurement
+                        #     measurement = aioinflux.Measurement('my_measurement').tag('serial_number', self.serial_number)
+
+                        #     # Add fields to the measurement
+                        #     for key, value in self.runtime_data.items():
+                        #         measurement.field(key, value)
+
+                        #     # Write the measurement to InfluxDB
+                        #     await influxdb_client.write(measurement)
+                        # except Exception as e:
+                        #     log.error(f'Error while writing data to InfluxDB: {str(e)}')
+
+                        sleep_time = self.mqtt_fast_runtime_data_interval_seconds - (fast_runtime_data_time - last_fast_runtime_data_time).total_seconds() # wait till next fast runtime data interval
+                        last_fast_runtime_data_time = fast_runtime_data_time
+
+                        if sleep_time > 0:
+                            log.debug(f'main_loop {self.serial_number} sleeping for {sleep_time} seconds')
+                            await asyncio.sleep(sleep_time)
+
+            except KeyboardInterrupt:
+                # Disconnect from the MQTT broker
+                self.mqtt_task.cancel()
+                await self.mqtt_task
+                log.error(f'Goodwe_MQTT {self.serial_number} MQTT client disconnected')
+                break
+            
+            except Exception as e:
+                log.error(f'Goodwe_MQTT {self.serial_number} Error while processing message: {str(e)}')
+                # Disconnect from the MQTT broker
+                self.mqtt_task.cancel()
+                await self.mqtt_task
+                log.error(f'Goodwe_MQTT {self.serial_number} MQTT client disconnected')
+
+                asyncio.sleep(5) # sleep and try again
 
 async def main(config):
 
@@ -431,16 +446,17 @@ async def main(config):
     for inverter in config["goodwe"]["inverters"]:
         inv = Goodwe_MQTT(serial_number=inverter["serial_number"], ip_address=inverter["ip_address"], mqtt_broker_ip=config["mqtt"]["broker_ip"], mqtt_broker_port=config["mqtt"]["broker_port"],
                             mqtt_username=config["mqtt"]["username"], mqtt_password=config["mqtt"]["password"],
-                            mqtt_topic_prefix=config["mqtt"]["topic_prefix"], mqtt_control_topic_postfix=config["mqtt"]["control_topic_postfix"], mqtt_runtime_data_topic_postfix=config["mqtt"]["runtime_data_topic_postfix"],
-                            mqtt_fast_runtime_data_topic_postfix=config["mqtt"]["fast_runtime_data_topic_postfix"],
-                            mqtt_grid_export_limit_topic_postfix=config["mqtt"]["grid_export_limit_topic_postfix"], delay_between_polls_seconds=config["goodwe"]["poll_interval"])
+                            mqtt_topic_prefix=config["mqtt"]["topic_prefix"], mqtt_control_topic_postfix=config["mqtt"]["control_topic_postfix"],
+                            mqtt_runtime_data_topic_postfix=config["mqtt"]["runtime_data_topic_postfix"], mqtt_runtime_data_interval_seconds=config["mqtt"]["runtime_data_interval_seconds"],
+                            mqtt_fast_runtime_data_topic_postfix=config["mqtt"]["fast_runtime_data_topic_postfix"], mqtt_fast_runtime_data_interval_seconds=config["mqtt"]["fast_runtime_data_interval_seconds"],
+                            mqtt_grid_export_limit_topic_postfix=config["mqtt"]["grid_export_limit_topic_postfix"])
 
         await inv.connect_inverter() # start inverter connection and threads
         inverters.append(inv)
         asyncio.ensure_future(inverters[-1].main_loop())
 
         # wait between starting threads to distribute the communication load in time
-        await asyncio.sleep(config["goodwe"]["poll_interval"] / 2.0)
+        await asyncio.sleep(config["mqtt"]["fast_runtime_data_interval_seconds"] / 2.0)
 
     await asyncio.gather(*[inv.mqtt_task for inv in inverters]) 
 
