@@ -417,7 +417,7 @@ class Goodwe_MQTT():
                         sleep_time = self.mqtt_fast_runtime_data_interval_seconds - (fast_runtime_data_time - previous_fast_runtime_data_time).total_seconds() # wait till next fast runtime data interval
                         previous_fast_runtime_data_time = fast_runtime_data_time
 
-                        if sleep_time > 0.0:
+                        if sleep_time.total_seconds() > 0.0:
                             log.debug(f'main_loop {self.serial_number} sleeping for {sleep_time} seconds')
                             await asyncio.sleep(sleep_time.total_seconds())
 
@@ -429,7 +429,7 @@ class Goodwe_MQTT():
                 break
             
             except Exception as e:
-                log.error(f'Goodwe_MQTT {self.serial_number} Error while processing message: {str(e)}')
+                log.error(f'Goodwe_MQTT {self.serial_number} main_loop Exception: {str(e)}')
                 # Disconnect from the MQTT broker
                 self.mqtt_task.cancel()
                 await self.mqtt_task
