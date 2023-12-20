@@ -419,7 +419,7 @@ class Goodwe_MQTT():
 
                         if sleep_time > 0.0:
                             log.debug(f'main_loop {self.serial_number} sleeping for {sleep_time} seconds')
-                            await asyncio.sleep(sleep_time)
+                            await asyncio.sleep(sleep_time.total_seconds())
 
             except KeyboardInterrupt:
                 # Disconnect from the MQTT broker
