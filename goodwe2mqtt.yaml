@@ -6,6 +6,7 @@ mqtt:
   client_id: goodwe2mqtt
   topic_prefix: "goodwe2mqtt"
   runtime_data_topic_postfix: "runtime_data" # from inverter
+  fast_runtime_data_topic_postfix: "fast_runtime_data" # will be updated every 1s or less
   control_topic_postfix: "control" # to inverter
   grid_export_limit_topic_postfix: "grid_export_limit" # from inverter
 
