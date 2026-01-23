@@ -11,7 +11,7 @@
 - [x] Task: Verify Inverter Communication [c2fc998]
     - [x] Write tests to mock `goodwe` library responses. [c2fc998]
     - [x] Verify data polling logic in `goodwe2mqtt.py`. [c2fc998]
-- [~] Task: Verify MQTT Communication
-    - [ ] Write tests to mock `aiomqtt` and `paho-mqtt` connections.
-    - [ ] Verify message publishing and topic construction.
+- [x] Task: Verify MQTT Communication [dbf81b3]
+    - [x] Write tests to mock `aiomqtt` and `paho-mqtt` connections. [dbf81b3]
+    - [x] Verify message publishing and topic construction. [dbf81b3]
 - [ ] Task: Conductor - User Manual Verification 'Phase 2: Core Logic Verification' (Protocol in workflow.md)
