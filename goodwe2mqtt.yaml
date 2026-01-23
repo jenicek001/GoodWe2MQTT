@@ -20,7 +20,7 @@ goodwe:
     ip_address: "192.168.X.X"
 
 logger:
-  log_file: /var/log/goodwe2mqtt/goodwe2mqtt.log
+  log_file: goodwe2mqtt.log
   # DEBUG, INFO, WARNING, ERROR, CRITICAL
   log_level: DEBUG
   log_to_console: True

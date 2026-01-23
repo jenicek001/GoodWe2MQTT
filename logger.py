@@ -32,6 +32,15 @@ def setup_logging(config):
         log.handlers.clear()
 
     if log_to_file:
+        import os
+        log_dir = os.path.dirname(log_file)
+        if log_dir and not os.path.exists(log_dir):
+            try:
+                os.makedirs(log_dir)
+            except Exception as e:
+                print(f'Error creating log directory "{log_dir}": {e}')
+                # Fallback or continue? Original code might crash later if we can't write.
+        
         if log_rotate:
             # Create a RotatingFileHandler object that rotates log files when they reach 10 MB in size.
             file_handler = logging.handlers.RotatingFileHandler(log_file, maxBytes=log_rotate_size, backupCount=log_rotate_count)

@@ -4,5 +4,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-- [ ] **Track: Project Initialization and Baseline Verification**
+- [~] **Track: Project Initialization and Baseline Verification**
   *Link: [./tracks/baseline_init_20260123/](./tracks/baseline_init_20260123/)*
