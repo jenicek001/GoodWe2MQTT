@@ -7,3 +7,6 @@ PyYAML==6.0.1
 six==1.16.0
 tzdata==2023.3
 tzlocal==5.0.1
+pytest
+pytest-asyncio
+pytest-cov
