@@ -7,11 +7,11 @@
     - [x] Write unit tests for configuration parsing in `goodwe2mqtt.py`. [3f582ab]
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Environment and Baseline Testing' (Protocol in workflow.md) [fa07545]
 
-## Phase 2: Core Logic Verification
+## Phase 2: Core Logic Verification [checkpoint: e863f5b]
 - [x] Task: Verify Inverter Communication [c2fc998]
     - [x] Write tests to mock `goodwe` library responses. [c2fc998]
     - [x] Verify data polling logic in `goodwe2mqtt.py`. [c2fc998]
 - [x] Task: Verify MQTT Communication [dbf81b3]
     - [x] Write tests to mock `aiomqtt` and `paho-mqtt` connections. [dbf81b3]
     - [x] Verify message publishing and topic construction. [dbf81b3]
-- [ ] Task: Conductor - User Manual Verification 'Phase 2: Core Logic Verification' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 2: Core Logic Verification' (Protocol in workflow.md) [e863f5b]
