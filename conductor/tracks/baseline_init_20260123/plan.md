@@ -1,11 +1,11 @@
 # Implementation Plan: Project Initialization and Baseline Verification
 
-## Phase 1: Environment and Baseline Testing
-- [~] Task: Set up testing environment and baseline for core modules
+## Phase 1: Environment and Baseline Testing [checkpoint: fa07545]
+- [x] Task: Set up testing environment and baseline for core modules
     - [x] Create `tests/` directory and configure `pytest`. [eb56c82]
     - [x] Write unit tests for `logger.py` to ensure correct logging behavior. [45efc57]
-    - [ ] Write unit tests for configuration parsing in `goodwe2mqtt.py`.
-- [ ] Task: Conductor - User Manual Verification 'Phase 1: Environment and Baseline Testing' (Protocol in workflow.md)
+    - [x] Write unit tests for configuration parsing in `goodwe2mqtt.py`. [3f582ab]
+- [x] Task: Conductor - User Manual Verification 'Phase 1: Environment and Baseline Testing' (Protocol in workflow.md) [fa07545]
 
 ## Phase 2: Core Logic Verification
 - [ ] Task: Verify Inverter Communication
