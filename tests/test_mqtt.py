@@ -1,0 +1,131 @@
+import pytest
+import asyncio
+import json
+from unittest.mock import patch, MagicMock, AsyncMock
+import goodwe2mqtt
+
+@pytest.mark.asyncio
+async def test_send_mqtt_response():
+    """Test sending an MQTT response."""
+    with patch("asyncio.ensure_future"):
+        gw = goodwe2mqtt.Goodwe_MQTT(
+            serial_number="TEST_SN",
+            ip_address="1.2.3.4",
+            mqtt_broker_ip="127.0.0.1",
+            mqtt_broker_port=1883,
+            mqtt_username="user",
+            mqtt_password="pass",
+            mqtt_topic_prefix="test",
+            mqtt_control_topic_postfix="control",
+            mqtt_runtime_data_topic_postfix="data",
+            mqtt_runtime_data_interval_seconds=5,
+            mqtt_fast_runtime_data_topic_postfix="fast",
+            mqtt_fast_runtime_data_interval_seconds=1,
+            mqtt_grid_export_limit_topic_postfix="limit"
+        )
+    
+    # Mock aiomqtt.Client
+    mock_client = MagicMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock()
+    mock_client.publish = AsyncMock()
+    
+    with patch("aiomqtt.Client", return_value=mock_client) as mock_client_init:
+        await gw.send_mqtt_response("test/topic", {"key": "value"})
+        
+        mock_client_init.assert_called_once_with(
+            "127.0.0.1", 1883, username="user", password="pass"
+        )
+        mock_client.publish.assert_called_once_with(
+            "test/topic", payload=json.dumps({"key": "value"})
+        )
+
+@pytest.mark.asyncio
+async def test_mqtt_client_task_subscription():
+    """Test that mqtt_client_task subscribes to the correct topic."""
+    with patch("asyncio.ensure_future"):
+        gw = goodwe2mqtt.Goodwe_MQTT(
+            serial_number="TEST_SN",
+            ip_address="1.2.3.4",
+            mqtt_broker_ip="127.0.0.1",
+            mqtt_broker_port=1883,
+            mqtt_username="user",
+            mqtt_password="pass",
+            mqtt_topic_prefix="test",
+            mqtt_control_topic_postfix="control",
+            mqtt_runtime_data_topic_postfix="data",
+            mqtt_runtime_data_interval_seconds=5,
+            mqtt_fast_runtime_data_topic_postfix="fast",
+            mqtt_fast_runtime_data_interval_seconds=1,
+            mqtt_grid_export_limit_topic_postfix="limit"
+        )
+    
+    mock_client = MagicMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock()
+    mock_client.subscribe = AsyncMock()
+    
+    # Mock the messages provider
+    mock_messages = MagicMock()
+    # async for message in messages: calls __aiter__
+    mock_messages.__aiter__ = MagicMock(return_value=mock_messages)
+    mock_messages.__anext__ = AsyncMock(side_effect=StopAsyncIteration)
+    
+    mock_provider = MagicMock()
+    mock_provider.__aenter__ = AsyncMock(return_value=mock_messages)
+    mock_provider.__aexit__ = AsyncMock()
+    
+    mock_client.messages = MagicMock(return_value=mock_provider)
+    
+    with patch("aiomqtt.Client", return_value=mock_client):
+        await gw.mqtt_client_task()
+        
+        mock_client.subscribe.assert_called_once_with(gw.mqtt_control_topic)
+        assert gw.mqtt_control_topic == "test/TEST_SN/control"
+
+@pytest.mark.asyncio
+async def test_mqtt_client_task_process_message():
+    """Test that mqtt_client_task processes an incoming message."""
+    with patch("asyncio.ensure_future"):
+        gw = goodwe2mqtt.Goodwe_MQTT(
+            serial_number="TEST_SN",
+            ip_address="1.2.3.4",
+            mqtt_broker_ip="127.0.0.1",
+            mqtt_broker_port=1883,
+            mqtt_username="user",
+            mqtt_password="pass",
+            mqtt_topic_prefix="test",
+            mqtt_control_topic_postfix="control",
+            mqtt_runtime_data_topic_postfix="data",
+            mqtt_runtime_data_interval_seconds=5,
+            mqtt_fast_runtime_data_topic_postfix="fast",
+            mqtt_fast_runtime_data_interval_seconds=1,
+            mqtt_grid_export_limit_topic_postfix="limit"
+        )
+    
+    mock_client = MagicMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock()
+    mock_client.subscribe = AsyncMock()
+    
+    # Mock a message
+    mock_message = MagicMock()
+    mock_message.payload.decode.return_value = '{"get_operation_mode": 1}'
+    
+    # Mock the messages provider iterator to return one message then stop
+    mock_messages = MagicMock()
+    mock_messages.__aiter__ = MagicMock(return_value=mock_messages)
+    mock_messages.__anext__ = AsyncMock()
+    mock_messages.__anext__.side_effect = [mock_message, StopAsyncIteration]
+    
+    mock_provider = MagicMock()
+    mock_provider.__aenter__ = AsyncMock(return_value=mock_messages)
+    mock_provider.__aexit__ = AsyncMock()
+    mock_client.messages = MagicMock(return_value=mock_provider)
+    
+    with patch("aiomqtt.Client", return_value=mock_client), \
+         patch.object(gw, 'get_operation_mode', new_callable=AsyncMock) as mock_get_om:
+        await gw.mqtt_client_task()
+        
+        mock_get_om.assert_called_once()
+
