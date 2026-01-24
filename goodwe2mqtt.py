@@ -60,6 +60,7 @@ class Goodwe_MQTT():
         self.mqtt_fast_runtime_data_interval_seconds = timedelta(seconds=mqtt_fast_runtime_data_interval_seconds)
         self.grid_export_limit_topic = f'{mqtt_topic}/{mqtt_grid_export_limit_topic_postfix}'
         self.operation_mode_topic = f'{mqtt_topic}/operation_mode'
+        self.status_topic = f'{mqtt_topic}/status'
 
         self.inverter = None
         self.runtime_data = None
@@ -68,9 +69,26 @@ class Goodwe_MQTT():
         log.info(self)
 
         self.mqtt_task = asyncio.ensure_future(self.mqtt_client_task())
+        self.heartbeat_task_ref = asyncio.ensure_future(self.heartbeat_task())
 
     def __str__(self):
         return f'{self.serial_number}, {self.ip_address}, {self.grid_export_limit}, {self.mqtt_broker_ip}, {self.mqtt_broker_port}, {self.mqtt_username}, {self.mqtt_control_topic}, {self.mqtt_runtime_data_topic}, {self.grid_export_limit_topic}'
+
+    async def heartbeat_task(self):
+        log.info(f'heartbeat_task {self.serial_number} started')
+        while True:
+            try:
+                async with aiomqtt.Client(self.mqtt_broker_ip, self.mqtt_broker_port, username=self.mqtt_username, password=self.mqtt_password) as client:
+                    log.info(f'heartbeat_task {self.serial_number} connected to MQTT broker')
+                    while True:
+                        log.debug(f'heartbeat_task {self.serial_number} sending heartbeat')
+                        await client.publish(self.status_topic, payload=json.dumps("online"))
+                        await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.error(f'heartbeat_task {self.serial_number} error: {e}. Retrying in 10s...')
+                await asyncio.sleep(10)
 
     async def connect_inverter(self):
         log.info(f'Connecting to inverter {self.serial_number} at {self.ip_address}')
