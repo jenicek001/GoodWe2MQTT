@@ -26,6 +26,14 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
+    - name: Run Ruff (Linter)
+      run: |
+        ruff check .
+        
+    - name: Run Mypy (Type Checker)
+      run: |
+        mypy . --ignore-missing-imports
+        
     - name: Run tests with pytest
       run: |
         pytest --cov=. --cov-report=xml

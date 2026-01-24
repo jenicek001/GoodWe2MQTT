@@ -6,12 +6,9 @@ from datetime import datetime, timedelta
 import pytz
 import tzlocal
 import json
-import paho.mqtt.client as mqtt
 import yaml # pip install PyYAML
 import sys
-import json
 #from datetime import date, datetime, timedelta
-from dateutil import tz
 from logger import log
 #import aioinflux
 from goodwe.inverter import OperationMode 

@@ -1,8 +1,6 @@
-import sys
-from unittest.mock import patch, mock_open, MagicMock
+from unittest.mock import patch, mock_open
 import pytest
 import goodwe2mqtt
-import yaml
 
 def test_read_config_success():
     """Test reading a valid configuration file."""

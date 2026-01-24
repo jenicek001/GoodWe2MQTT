@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime
 import goodwe2mqtt
@@ -9,7 +8,7 @@ async def test_connect_inverter():
     """Test connecting to the inverter."""
     # Mock the goodwe.connect function
     with patch("goodwe.connect", new_callable=AsyncMock) as mock_connect, \
-         patch("asyncio.ensure_future") as mock_ensure_future:
+         patch("asyncio.ensure_future"):
         mock_inverter = MagicMock()
         mock_connect.return_value = mock_inverter
         

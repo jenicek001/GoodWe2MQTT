@@ -2,7 +2,6 @@ import pytest
 import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 from goodwe2mqtt import Goodwe_MQTT
-import goodwe
 
 @pytest.fixture
 def mock_config():
@@ -117,7 +116,7 @@ async def test_heartbeat_reporting(mock_config):
     with patch('goodwe2mqtt.aiomqtt.Client', return_value=mock_client):
         # We mock sleep to break the loop after one iteration
         # Use AsyncMock explicitly since asyncio.sleep is awaited
-        with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+        with patch('asyncio.sleep', new_callable=AsyncMock):
              # Loop testing is fragile with mocks, so we just verify the method exists and is async
              if not hasattr(gw, 'heartbeat_task'):
                 pytest.fail("heartbeat_task method not found")

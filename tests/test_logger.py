@@ -1,7 +1,6 @@
 import sys
 import logging
 from unittest.mock import patch, MagicMock
-import pytest
 
 # Helper to clear logger module from sys.modules
 def refresh_logger_module():
@@ -11,9 +10,9 @@ def refresh_logger_module():
 def test_logger_initialization():
     refresh_logger_module()
     
-    with patch('builtins.open', create=True) as mock_open_func, \
+    with patch('builtins.open', create=True), \
          patch('yaml.load') as mock_yaml_load, \
-         patch('logging.FileHandler') as mock_file_handler:
+         patch('logging.FileHandler'):
         
         # Setup mock config
         mock_yaml_load.return_value = {
