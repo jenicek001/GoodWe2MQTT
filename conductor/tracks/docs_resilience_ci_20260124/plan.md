@@ -26,13 +26,13 @@ Automate the quality checks and ensure every change is validated against the tes
     - [x] Add linting and type-checking steps to the CI pipeline
 - [x] Task: Conductor - User Manual Verification 'CI/CD Pipeline & Quality Gates' (Protocol in workflow.md) [4ce841a]
 
-## Phase 3: Comprehensive Documentation
+## Phase 3: Comprehensive Documentation [checkpoint: 8b69fe2]
 Standardize code documentation, provide architectural clarity with Mermaid.js, and define the MQTT API.
 
-- [ ] Task: Code Hardening (Type Hints & Docstrings)
-    - [ ] Apply Python type hints to all function signatures across the codebase
-    - [ ] Add PEP 257 compliant docstrings to all modules, classes, and public functions
-- [ ] Task: Developer & API Documentation
-    - [ ] Create `CONTRIBUTING.md` with dev environment setup and Mermaid.js architecture diagrams
-    - [ ] Create `docs/mqtt_api.md` (or update `README.md`) with the full MQTT topic and payload specification
-- [ ] Task: Conductor - User Manual Verification 'Comprehensive Documentation' (Protocol in workflow.md)
+- [x] Task: Code Hardening (Type Hints & Docstrings) [e2f01d3]
+    - [x] Apply Python type hints to all function signatures across the codebase
+    - [x] Add PEP 257 compliant docstrings to all modules, classes, and public functions
+- [x] Task: Developer & API Documentation [ed0e40f]
+    - [x] Create `CONTRIBUTING.md` with dev environment setup and Mermaid.js architecture diagrams
+    - [x] Create `docs/mqtt_api.md` (or update `README.md`) with the full MQTT topic and payload specification
+- [x] Task: Conductor - User Manual Verification 'Comprehensive Documentation' (Protocol in workflow.md) [8b69fe2]
