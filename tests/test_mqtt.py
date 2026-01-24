@@ -61,7 +61,8 @@ async def test_mqtt_client_task_subscription():
         )
     
     mock_client = MagicMock()
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    # First time return client, second time raise CancelledError to break loop
+    mock_client.__aenter__ = AsyncMock(side_effect=[mock_client, asyncio.CancelledError])
     mock_client.__aexit__ = AsyncMock()
     mock_client.subscribe = AsyncMock()
     
@@ -78,7 +79,10 @@ async def test_mqtt_client_task_subscription():
     mock_client.messages = MagicMock(return_value=mock_provider)
     
     with patch("aiomqtt.Client", return_value=mock_client):
-        await gw.mqtt_client_task()
+        try:
+            await gw.mqtt_client_task()
+        except asyncio.CancelledError:
+            pass
         
         mock_client.subscribe.assert_called_once_with(gw.mqtt_control_topic)
         assert gw.mqtt_control_topic == "test/TEST_SN/control"
@@ -104,7 +108,8 @@ async def test_mqtt_client_task_process_message():
         )
     
     mock_client = MagicMock()
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    # First time return client, second time raise CancelledError to break loop
+    mock_client.__aenter__ = AsyncMock(side_effect=[mock_client, asyncio.CancelledError])
     mock_client.__aexit__ = AsyncMock()
     mock_client.subscribe = AsyncMock()
     
@@ -125,7 +130,11 @@ async def test_mqtt_client_task_process_message():
     
     with patch("aiomqtt.Client", return_value=mock_client), \
          patch.object(gw, 'get_operation_mode', new_callable=AsyncMock) as mock_get_om:
-        await gw.mqtt_client_task()
+        
+        try:
+            await gw.mqtt_client_task()
+        except asyncio.CancelledError:
+            pass
         
         mock_get_om.assert_called_once()
 

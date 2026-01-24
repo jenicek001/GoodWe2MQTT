@@ -75,10 +75,15 @@ class Goodwe_MQTT():
     async def connect_inverter(self):
         log.info(f'Connecting to inverter {self.serial_number} at {self.ip_address}')
         start_time = time.time()
-        self.inverter = await goodwe.connect(host = self.ip_address, family = 'ET')
-        connection_time = time.time() - start_time
-        log.info(f'Connected to inverter {self.serial_number} in {connection_time} seconds')
-        return self.inverter
+        try:
+            self.inverter = await goodwe.connect(host = self.ip_address, family = 'ET')
+            connection_time = time.time() - start_time
+            log.info(f'Connected to inverter {self.serial_number} in {connection_time} seconds')
+            return self.inverter
+        except Exception as e:
+            log.error(f'Failed to connect to inverter {self.serial_number} at {self.ip_address}: {e}')
+            self.inverter = None
+            return None
 
     async def send_mqtt_export_limit(self, grid_export_limit):
         grid_export_limit_response = {}
@@ -109,143 +114,144 @@ class Goodwe_MQTT():
     async def mqtt_client_task(self):
         log.debug(f'mqtt_client_task: {self.serial_number}')
 
-        try:
-            async with aiomqtt.Client(self.mqtt_broker_ip, self.mqtt_broker_port, username=self.mqtt_username, password=self.mqtt_password) as client:
-                log.info(f'mqtt_client_task {self.serial_number} connected to MQTT broker {self.mqtt_broker_ip}:{self.mqtt_broker_port}')
-                async with client.messages() as messages:
-                    await client.subscribe(self.mqtt_control_topic)
-                    async for message in messages:
-                        log.info(f'mqtt_client_task {self.serial_number} message: {message}')
-                        message_payload = message.payload.decode("utf-8")
-                        log.info(f'mqtt_client_task {self.serial_number} message_payload: {message_payload}')
+        while True:
+            try:
+                async with aiomqtt.Client(self.mqtt_broker_ip, self.mqtt_broker_port, username=self.mqtt_username, password=self.mqtt_password) as client:
+                    log.info(f'mqtt_client_task {self.serial_number} connected to MQTT broker {self.mqtt_broker_ip}:{self.mqtt_broker_port}')
+                    async with client.messages() as messages:
+                        await client.subscribe(self.mqtt_control_topic)
+                        async for message in messages:
+                            log.info(f'mqtt_client_task {self.serial_number} message: {message}')
+                            message_payload = message.payload.decode("utf-8")
+                            log.info(f'mqtt_client_task {self.serial_number} message_payload: {message_payload}')
 
-                        if 'get_grid_export_limit' in message_payload:
-                            #self.requested_grid_export_limit = int(message_payload['get_grid_export_limit']) #int(message_payload.split(':')[1])
-                            # print(f'mqtt_client_task {self.serial_number} Requested grid export limit: {self.requested_grid_export_limit}')
-                            log.info(f'mqtt_client_task {self.serial_number} Getting grid export limit from inverter: {message_payload}')
-                            self.grid_export_limit = await self.get_grid_export_limit()
-                            log.info(f'mqtt_client_task {self.serial_number} Current inverter grid export limit: {self.grid_export_limit}')
+                            if 'get_grid_export_limit' in message_payload:
+                                #self.requested_grid_export_limit = int(message_payload['get_grid_export_limit']) #int(message_payload.split(':')[1])
+                                # print(f'mqtt_client_task {self.serial_number} Requested grid export limit: {self.requested_grid_export_limit}')
+                                log.info(f'mqtt_client_task {self.serial_number} Getting grid export limit from inverter: {message_payload}')
+                                self.grid_export_limit = await self.get_grid_export_limit()
+                                log.info(f'mqtt_client_task {self.serial_number} Current inverter grid export limit: {self.grid_export_limit}')
 
-                            await self.send_mqtt_export_limit(self.grid_export_limit)
+                                await self.send_mqtt_export_limit(self.grid_export_limit)
 
-                        elif 'set_grid_export_limit' in message_payload: # test: mosquitto_pub -h localhost -u openhabian -P **** -t goodwe2mqtt/9010KETU21CW3302/control -m '{"set_grid_export_limit":9440}'
-                            requested_grid_export_limit_json = json.loads(message_payload)
-                            #print(f'mqtt_client_task {self.serial_number} power_json: {requested_grid_export_limit_json}')
-                            self.requested_grid_export_limit = int(requested_grid_export_limit_json['set_grid_export_limit'])
-                            #print(f'mqtt_client_task {self.serial_number} Requested grid export limit: {self.requested_grid_export_limit}')
-                            #power = int(message_payload.split(':')[1])
-                            #print(f'mqtt_client_task {self.serial_number} power: {power}')
-                            #power = int(message_payload['set_grid_export_limit'])
-                            #power2 = message_payload['set_grid_export_limit']
-                            
-                            #print(f'mqtt_client_task {self.serial_number} power: {power}')
-                            #print(f'mqtt_client_task {self.serial_number} power2: {power2}')
-                            #self.requested_grid_export_limit = int(message_payload['set_grid_export_limit'])
-                            log.info(f'mqtt_client_task {self.serial_number} Setting inverter grid export limit: {message_payload}')
-                            await self.set_grid_export_limit(self.requested_grid_export_limit)
-                            #await self.set_grid_export_limit(9300)
-                            log.debug(f'mqtt_client_task {self.serial_number} Inverter grid export limit set - reading from inverter to check')
-                            self.grid_export_limit = await self.get_grid_export_limit()
-                            log.info(f'mqtt_client_task {self.serial_number} Current inverter grid export limit: {self.grid_export_limit}')
+                            elif 'set_grid_export_limit' in message_payload: # test: mosquitto_pub -h localhost -u openhabian -P **** -t goodwe2mqtt/9010KETU21CW3302/control -m '{"set_grid_export_limit":9440}'
+                                requested_grid_export_limit_json = json.loads(message_payload)
+                                #print(f'mqtt_client_task {self.serial_number} power_json: {requested_grid_export_limit_json}')
+                                self.requested_grid_export_limit = int(requested_grid_export_limit_json['set_grid_export_limit'])
+                                #print(f'mqtt_client_task {self.serial_number} Requested grid export limit: {self.requested_grid_export_limit}')
+                                #power = int(message_payload.split(':')[1])
+                                #print(f'mqtt_client_task {self.serial_number} power: {power}')
+                                #power = int(message_payload['set_grid_export_limit'])
+                                #power2 = message_payload['set_grid_export_limit']
+                                
+                                #print(f'mqtt_client_task {self.serial_number} power: {power}')
+                                #print(f'mqtt_client_task {self.serial_number} power2: {power2}')
+                                #self.requested_grid_export_limit = int(message_payload['set_grid_export_limit'])
+                                log.info(f'mqtt_client_task {self.serial_number} Setting inverter grid export limit: {message_payload}')
+                                await self.set_grid_export_limit(self.requested_grid_export_limit)
+                                #await self.set_grid_export_limit(9300)
+                                log.debug(f'mqtt_client_task {self.serial_number} Inverter grid export limit set - reading from inverter to check')
+                                self.grid_export_limit = await self.get_grid_export_limit()
+                                log.info(f'mqtt_client_task {self.serial_number} Current inverter grid export limit: {self.grid_export_limit}')
 
-                            await self.send_mqtt_export_limit(self.grid_export_limit)
+                                await self.send_mqtt_export_limit(self.grid_export_limit)
 
-                        elif 'get_operation_mode' in message_payload:
-                            log.info(f'mqtt_client_task {self.serial_number} Getting operation mode from inverter: {message_payload}')
-                            await self.get_operation_mode()
+                            elif 'get_operation_mode' in message_payload:
+                                log.info(f'mqtt_client_task {self.serial_number} Getting operation mode from inverter: {message_payload}')
+                                await self.get_operation_mode()
 
-                        elif 'set_eco_discharge' in message_payload:
-                            log.info(f'mqtt_client_task {self.serial_number} Start discharging battery to grid: {message_payload}')
-                            if len(message_payload) > 0:
-                                # MQTT payload: eco_discharge_power_percent:10
+                            elif 'set_eco_discharge' in message_payload:
+                                log.info(f'mqtt_client_task {self.serial_number} Start discharging battery to grid: {message_payload}')
+                                if len(message_payload) > 0:
+                                    # MQTT payload: eco_discharge_power_percent:10
+                                    try:
+                                        requested_eco_discharge_power_percent_json = json.loads(message_payload)
+                                        requested_eco_discharge_power_percent = int(requested_eco_discharge_power_percent_json['set_eco_discharge'])           
+                                    except json.JSONDecodeError:
+                                        log.error(f'mqtt_client_task {self.serial_number} Invalid JSON payload: {message_payload}')
+                                        continue
+                                    except KeyError:
+                                        log.error(f'mqtt_client_task {self.serial_number} Missing key in JSON payload: {message_payload}')
+                                        continue
+                                    
+                                    if requested_eco_discharge_power_percent < 0 or requested_eco_discharge_power_percent > 100:
+                                        log.error(f'mqtt_client_task {self.serial_number} Invalid eco discharge power percent: {requested_eco_discharge_power_percent}')
+                                        continue
+                                    
+                                    log.debug(f'mqtt_client_task {self.serial_number} Eco discharge set to: {requested_eco_discharge_power_percent}')
+
+                                    #operation_mode = OperationMode.ECO_DISCHARGE if requested_eco_discharge_power_percent > 0 else OperationMode.GENERAL
+                                    operation_mode = OperationMode.ECO_DISCHARGE
+                                    
+                                    try:
+                                        await self.inverter.set_operation_mode(operation_mode=operation_mode, eco_mode_power=requested_eco_discharge_power_percent)
+                                    except goodwe.exceptions.MaxRetriesException as e:
+                                        log.error(f'mqtt_client_task {self.serial_number} Error while setting eco discharge: {str(e)}')
+                                    except goodwe.exceptions.RequestFailedException as e:
+                                        log.error(f'mqtt_client_task {self.serial_number} Error while setting eco discharge: {str(e)}')
+                                    except Exception as e:
+                                        log.error(f'mqtt_client_task {self.serial_number} Error while setting eco discharge: {str(e)}')
+
+                                    await self.get_operation_mode()
+
+                            elif 'set_eco_charge' in message_payload:
+                                log.info(f'mqtt_client_task {self.serial_number} Start charging battery from grid: {message_payload}')
+                                if len(message_payload) > 0:
+                                    # MQTT payload: eco_charge_power_percent:10
+                                    try:
+                                        requested_eco_charge_power_percent_json = json.loads(message_payload)
+                                        requested_eco_charge_power_percent = int(requested_eco_charge_power_percent_json['set_eco_charge'])
+                                        requested_target_battery_soc = int(requested_eco_charge_power_percent_json['target_battery_soc'])
+                                    except json.JSONDecodeError:
+                                        log.error(f'mqtt_client_task {self.serial_number} Invalid JSON payload: {message_payload}')
+                                        continue
+                                    except KeyError:
+                                        log.error(f'mqtt_client_task {self.serial_number} Missing key in JSON payload: {message_payload}')
+                                        continue
+                                    
+                                    if requested_eco_charge_power_percent < 0 or requested_eco_charge_power_percent > 100:
+                                        log.error(f'mqtt_client_task {self.serial_number} Invalid eco charge power percent: {requested_eco_charge_power_percent}')
+                                        continue
+
+                                    if requested_target_battery_soc < 0 or requested_target_battery_soc > 100:
+                                        log.error(f'mqtt_client_task {self.serial_number} Invalid target battery SoC: {requested_target_battery_soc}')
+                                        continue
+                                    
+                                    log.debug(f'mqtt_client_task {self.serial_number} Eco charge set to: {requested_eco_charge_power_percent}, target battery SoC: {requested_target_battery_soc}')
+                                    
+                                    try:
+                                        await self.inverter.set_operation_mode(operation_mode=OperationMode.ECO_CHARGE, eco_mode_power=requested_eco_charge_power_percent, eco_mode_soc=requested_target_battery_soc)
+                                    except goodwe.exceptions.MaxRetriesException as e:
+                                        log.error(f'mqtt_client_task {self.serial_number} Error while setting eco charge: {str(e)}')
+                                    except goodwe.exceptions.RequestFailedException as e:
+                                        log.error(f'mqtt_client_task {self.serial_number} Error while setting eco charge: {str(e)}')
+                                    except Exception as e:
+                                        log.error(f'mqtt_client_task {self.serial_number} Error while setting eco charge: {str(e)}')
+
+                                    await self.get_operation_mode()
+
+                            elif 'set_general_operation_mode' in message_payload:
+                                log.info(f'mqtt_client_task {self.serial_number} Setting general operation mode: {message_payload}')
+                        
                                 try:
-                                    requested_eco_discharge_power_percent_json = json.loads(message_payload)
-                                    requested_eco_discharge_power_percent = int(requested_eco_discharge_power_percent_json['set_eco_discharge'])           
-                                except json.JSONDecodeError:
-                                    log.error(f'mqtt_client_task {self.serial_number} Invalid JSON payload: {message_payload}')
-                                    continue
-                                except KeyError:
-                                    log.error(f'mqtt_client_task {self.serial_number} Missing key in JSON payload: {message_payload}')
-                                    continue
-                                
-                                if requested_eco_discharge_power_percent < 0 or requested_eco_discharge_power_percent > 100:
-                                    log.error(f'mqtt_client_task {self.serial_number} Invalid eco discharge power percent: {requested_eco_discharge_power_percent}')
-                                    continue
-                                
-                                log.debug(f'mqtt_client_task {self.serial_number} Eco discharge set to: {requested_eco_discharge_power_percent}')
-
-                                #operation_mode = OperationMode.ECO_DISCHARGE if requested_eco_discharge_power_percent > 0 else OperationMode.GENERAL
-                                operation_mode = OperationMode.ECO_DISCHARGE
-                                
-                                try:
-                                    await self.inverter.set_operation_mode(operation_mode=operation_mode, eco_mode_power=requested_eco_discharge_power_percent)
+                                    await self.inverter.set_operation_mode(operation_mode=OperationMode.GENERAL)
                                 except goodwe.exceptions.MaxRetriesException as e:
-                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting eco discharge: {str(e)}')
+                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting general operation mode: {str(e)}')
                                 except goodwe.exceptions.RequestFailedException as e:
-                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting eco discharge: {str(e)}')
+                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting general operation mode: {str(e)}')
                                 except Exception as e:
-                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting eco discharge: {str(e)}')
+                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting general operation mode: {str(e)}')
 
                                 await self.get_operation_mode()
 
-                        elif 'set_eco_charge' in message_payload:
-                            log.info(f'mqtt_client_task {self.serial_number} Start charging battery from grid: {message_payload}')
-                            if len(message_payload) > 0:
-                                # MQTT payload: eco_charge_power_percent:10
-                                try:
-                                    requested_eco_charge_power_percent_json = json.loads(message_payload)
-                                    requested_eco_charge_power_percent = int(requested_eco_charge_power_percent_json['set_eco_charge'])
-                                    requested_target_battery_soc = int(requested_eco_charge_power_percent_json['target_battery_soc'])
-                                except json.JSONDecodeError:
-                                    log.error(f'mqtt_client_task {self.serial_number} Invalid JSON payload: {message_payload}')
-                                    continue
-                                except KeyError:
-                                    log.error(f'mqtt_client_task {self.serial_number} Missing key in JSON payload: {message_payload}')
-                                    continue
-                                
-                                if requested_eco_charge_power_percent < 0 or requested_eco_charge_power_percent > 100:
-                                    log.error(f'mqtt_client_task {self.serial_number} Invalid eco charge power percent: {requested_eco_charge_power_percent}')
-                                    continue
-
-                                if requested_target_battery_soc < 0 or requested_target_battery_soc > 100:
-                                    log.error(f'mqtt_client_task {self.serial_number} Invalid target battery SoC: {requested_target_battery_soc}')
-                                    continue
-                                
-                                log.debug(f'mqtt_client_task {self.serial_number} Eco charge set to: {requested_eco_charge_power_percent}, target battery SoC: {requested_target_battery_soc}')
-                                
-                                try:
-                                    await self.inverter.set_operation_mode(operation_mode=OperationMode.ECO_CHARGE, eco_mode_power=requested_eco_charge_power_percent, eco_mode_soc=requested_target_battery_soc)
-                                except goodwe.exceptions.MaxRetriesException as e:
-                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting eco charge: {str(e)}')
-                                except goodwe.exceptions.RequestFailedException as e:
-                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting eco charge: {str(e)}')
-                                except Exception as e:
-                                    log.error(f'mqtt_client_task {self.serial_number} Error while setting eco charge: {str(e)}')
-
-                                await self.get_operation_mode()
-
-                        elif 'set_general_operation_mode' in message_payload:
-                            log.info(f'mqtt_client_task {self.serial_number} Setting general operation mode: {message_payload}')
-                    
-                            try:
-                                await self.inverter.set_operation_mode(operation_mode=OperationMode.GENERAL)
-                            except goodwe.exceptions.MaxRetriesException as e:
-                                log.error(f'mqtt_client_task {self.serial_number} Error while setting general operation mode: {str(e)}')
-                            except goodwe.exceptions.RequestFailedException as e:
-                                log.error(f'mqtt_client_task {self.serial_number} Error while setting general operation mode: {str(e)}')
-                            except Exception as e:
-                                log.error(f'mqtt_client_task {self.serial_number} Error while setting general operation mode: {str(e)}')
-
-                            await self.get_operation_mode()
-
-                        else:
-                            log.error(f'mqtt_client_task {self.serial_number} Invalid command action {message_payload}')
+                            else:
+                                log.error(f'mqtt_client_task {self.serial_number} Invalid command action {message_payload}')
             
-            
-            # Send the result back to the result_topic
-            #await client.publish(result_topic, result)
-        except Exception as e:
-            log.error(f'mqtt_client_task {self.serial_number} Error while processing MQTT message: {str(e)}')
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                log.error(f'mqtt_client_task {self.serial_number} MQTT error: {e}. Reconnecting in 5s...')
+                await asyncio.sleep(5)
 
     async def get_grid_export_limit(self):
         self.grid_export_limit = await self.inverter.get_grid_export_limit()
@@ -354,84 +360,61 @@ class Goodwe_MQTT():
         # main loop allowing delayed restarts to recover from errors
         while True:
             try:
-                # Create InfluxDB client
-    #            influxdb_client = aioinflux.InfluxDBClient(db='mydb', host='localhost', port=8086)
+                # Check Inverter Connection
+                if self.inverter is None:
+                    log.info(f'main_loop {self.serial_number} Inverter not connected. Attempting to connect...')
+                    await self.connect_inverter()
+                    if self.inverter is None:
+                        log.warning(f'main_loop {self.serial_number} Inverter connection failed. Retrying in 10s...')
+                        await asyncio.sleep(10)
+                        continue
 
                 log.debug(f'main_loop {self.serial_number} started - requesting settings data')
-                await self.read_settings_data()
+                settings = await self.read_settings_data()
+                if settings is None:
+                    log.warning(f'main_loop {self.serial_number} Failed to read settings. Retrying in 5s...')
+                    await asyncio.sleep(5)
+                    continue
                 log.debug(f'main_loop {self.serial_number} settings data received')
-
-                # previous_fast_runtime_data_time = datetime.now() - self.mqtt_fast_runtime_data_interval_seconds
-                # previous_runtime_data_time = datetime.now() - self.mqtt_runtime_data_interval_seconds
 
                 next_fast_runtime_data_time = datetime.now()
                 next_runtime_data_time = datetime.now()
 
                 # Create MQTT client and publish the data to the MQTT broker
                 async with aiomqtt.Client(self.mqtt_broker_ip, self.mqtt_broker_port, username=self.mqtt_username, password=self.mqtt_password) as client:
+                    log.info(f'main_loop {self.serial_number} Connected to MQTT broker for publishing')
 
                     while True:
                         next_fast_runtime_data_time = datetime.now() + self.mqtt_fast_runtime_data_interval_seconds
                         log.debug(f'main_loop {self.serial_number} started - awaiting runtime data')
-                        await self.read_runtime_data() # read runtime data from inverter
+                        data = await self.read_runtime_data() # read runtime data from inverter
+                        if data is None:
+                            log.warning(f'main_loop {self.serial_number} Failed to read runtime data. Inverter might be offline.')
+                            await asyncio.sleep(5)
+                            continue
+
                         log.debug(f'main_loop {self.serial_number} runtime data received')
 
                         # publish fast runtime data
-                        # fast_runtime_data_time = datetime.now()
                         log.debug(f'main_loop {self.serial_number} Publishing fast runtime data to {self.mqtt_fast_runtime_data_topic}')
                         await client.publish(self.mqtt_fast_runtime_data_topic, payload=json.dumps(self.runtime_data))
                         
 
-                        # try: # publish fast runtime data
-                        #     # Publish the data to the MQTT broker
-                        #     async with aiomqtt.Client(self.mqtt_broker_ip, self.mqtt_broker_port, username=self.mqtt_username, password=self.mqtt_password) as client:
-                        #         log.debug(f'Publishing fast runtime data to {self.mqtt_fast_runtime_data_topic}')
-                        #         await client.publish(self.mqtt_fast_runtime_data_topic, payload=json.dumps(self.runtime_data))
-                        # except Exception as e:
-                        #     log.error(f'publish_data(): MQTT sending error while processing message: {str(e)}')
-                        
-                        # try:
-                        #     # Publish the data to the MQTT broker
-                        #     async with aiomqtt.Client(self.mqtt_broker_ip, self.mqtt_broker_port, username=self.mqtt_username, password=self.mqtt_password) as client:
-                        #         log.debug(f'Publishing runtime data to {self.mqtt_runtime_data_topic}')
-                        #         await client.publish(self.mqtt_runtime_data_topic, payload=json.dumps(self.runtime_data))
-                        # except Exception as e:
-                        #     log.error(f'publish_data(): MQTT sending error while processing message: {str(e)}')
-
-                        #if (datetime.now() - previous_runtime_data_time).total_seconds() >= self.mqtt_runtime_data_interval_seconds.total_seconds():
                         if datetime.now() >= next_runtime_data_time:
 
                             next_runtime_data_time = datetime.now() + self.mqtt_runtime_data_interval_seconds
-                            #previous_runtime_data_time = datetime.now()
                             log.debug(f'main_loop {self.serial_number} Publishing runtime data to {self.mqtt_runtime_data_topic}')
                             await client.publish(self.mqtt_runtime_data_topic, payload=json.dumps(self.runtime_data))
 
-                        # # Store the data in InfluxDB
-                        # try:
-                        #     # Create InfluxDB measurement
-                        #     measurement = aioinflux.Measurement('my_measurement').tag('serial_number', self.serial_number)
-
-                        #     # Add fields to the measurement
-                        #     for key, value in self.runtime_data.items():
-                        #         measurement.field(key, value)
-
-                        #     # Write the measurement to InfluxDB
-                        #     await influxdb_client.write(measurement)
-                        # except Exception as e:
-                        #     log.error(f'Error while writing data to InfluxDB: {str(e)}')
-                        # last_loop_duration = fast_runtime_data_time - previous_fast_runtime_data_time
-                        # log.debug(f'main_loop {self.serial_number} last loop duration: {last_loop_duration}')
-                        # sleep_time = (self.mqtt_fast_runtime_data_interval_seconds - last_loop_duration).total_seconds() # wait till next fast runtime data interval
-                        # log.debug(f'main_loop {self.serial_number} sleep time: {sleep_time}')
-                        # previous_fast_runtime_data_time = fast_runtime_data_time
-
                         now = datetime.now()
                         if now < next_fast_runtime_data_time:
-                            # if sleep_time > 0.0:
                             sleep_time_seconds = (next_fast_runtime_data_time - now).total_seconds()
                             log.debug(f'main_loop {self.serial_number} sleeping for {sleep_time_seconds} seconds')
                             await asyncio.sleep(sleep_time_seconds) # wait till next fast runtime data interval
 
+            except asyncio.CancelledError:
+                log.info(f'main_loop {self.serial_number} Cancelled.')
+                break
             except KeyboardInterrupt:
                 # Disconnect from the MQTT broker
                 self.mqtt_task.cancel()
@@ -440,13 +423,8 @@ class Goodwe_MQTT():
                 break
             
             except Exception as e:
-                log.error(f'Goodwe_MQTT {self.serial_number} main_loop Exception: {str(e)}')
-                # Disconnect from the MQTT broker
-                self.mqtt_task.cancel()
-                await self.mqtt_task
-                log.error(f'Goodwe_MQTT {self.serial_number} MQTT client disconnected')
-
-                asyncio.sleep(5) # sleep and try again
+                log.error(f'Goodwe_MQTT {self.serial_number} main_loop Exception: {str(e)}. Retrying in 5s...')
+                await asyncio.sleep(5) # sleep and try again
 
 async def main(config):
 
