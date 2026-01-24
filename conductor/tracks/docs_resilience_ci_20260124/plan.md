@@ -15,16 +15,16 @@ Focus on making the daemon "unbreakable" by handling network failures and provid
     - [x] Implement a background task that publishes a heartbeat/watchdog signal
 - [x] Task: Conductor - User Manual Verification 'Resilience & Logging Hardening' (Protocol in workflow.md) [64135ef]
 
-## Phase 2: CI/CD Pipeline & Quality Gates
+## Phase 2: CI/CD Pipeline & Quality Gates [checkpoint: 4ce841a]
 Automate the quality checks and ensure every change is validated against the test suite and style guide.
 
-- [ ] Task: Configure GitHub Actions Workflow
-    - [ ] Create `.github/workflows/ci.yml` defining the test execution environment
-    - [ ] Integrate `pytest` and `pytest-cov` into the CI pipeline
-- [ ] Task: Static Analysis Integration (Ruff & Mypy)
-    - [ ] Add `ruff` and `mypy` to development dependencies
-    - [ ] Add linting and type-checking steps to the CI pipeline
-- [ ] Task: Conductor - User Manual Verification 'CI/CD Pipeline & Quality Gates' (Protocol in workflow.md)
+- [x] Task: Configure GitHub Actions Workflow [3ca50a3]
+    - [x] Create `.github/workflows/ci.yml` defining the test execution environment
+    - [x] Integrate `pytest` and `pytest-cov` into the CI pipeline
+- [x] Task: Static Analysis Integration (Ruff & Mypy) [79e17da]
+    - [x] Add `ruff` and `mypy` to development dependencies
+    - [x] Add linting and type-checking steps to the CI pipeline
+- [x] Task: Conductor - User Manual Verification 'CI/CD Pipeline & Quality Gates' (Protocol in workflow.md) [4ce841a]
 
 ## Phase 3: Comprehensive Documentation
 Standardize code documentation, provide architectural clarity with Mermaid.js, and define the MQTT API.
