@@ -115,7 +115,7 @@ async def test_mqtt_client_task_process_message():
     
     # Mock a message
     mock_message = MagicMock()
-    mock_message.payload.decode.return_value = '{"get_operation_mode": 1}'
+    mock_message.payload = b'{"get_operation_mode": 1}'
     
     # Mock the messages provider iterator to return one message then stop
     mock_messages = MagicMock()

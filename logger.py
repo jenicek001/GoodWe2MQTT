@@ -1,11 +1,20 @@
+"""Logging configuration for the GoodWe2MQTT daemon."""
+
 import logging
 import logging.handlers
+from typing import Any, Dict
 import yaml
 import sys
 
+# Get the root logger
 log = logging.getLogger()
 
-def setup_logging(config):
+def setup_logging(config: Dict[str, Any]) -> None:
+    """Sets up logging based on the provided configuration dictionary.
+
+    Args:
+        config: A dictionary containing logging configuration parameters.
+    """
     log_level = config['logger']['log_level']
     log_to_file = bool(config['logger']['log_to_file'])
     log_file = config['logger']['log_file']
@@ -25,7 +34,7 @@ def setup_logging(config):
     elif log_level == 'CRITICAL':
         log.setLevel(logging.CRITICAL)
     else:
-        log.setLevel(logging.INFO) # default to INFO if log_level is not recognized
+        log.setLevel(logging.INFO)  # default to INFO if log_level is not recognized
 
     # Clear existing handlers to prevent duplicate logging if called multiple times
     if log.hasHandlers():
@@ -39,11 +48,13 @@ def setup_logging(config):
                 os.makedirs(log_dir)
             except Exception as e:
                 print(f'Error creating log directory "{log_dir}": {e}')
-                # Fallback or continue? Original code might crash later if we can't write.
         
+        file_handler: logging.FileHandler
         if log_rotate:
-            # Create a RotatingFileHandler object that rotates log files when they reach 10 MB in size.
-            file_handler = logging.handlers.RotatingFileHandler(log_file, maxBytes=log_rotate_size, backupCount=log_rotate_count)
+            # Create a RotatingFileHandler object that rotates log files when they reach specified size.
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_file, maxBytes=log_rotate_size, backupCount=log_rotate_count
+            )
         else:
             # Add a handler to the log object that writes messages to a file.
             file_handler = logging.FileHandler(log_file)
@@ -58,49 +69,14 @@ def setup_logging(config):
 
 config_file = "goodwe2mqtt.yaml"
 
-# Only execute if we can (e.g. file exists), or try/except.
-# To preserve original behavior, we try to load.
+# Load initial configuration and setup logging
 try:
-    config = yaml.load(open(config_file), Loader=yaml.FullLoader)
-    setup_logging(config)
-except Exception as e:
-    # If we are running in a test environment (e.g. pytest), we might not want to exit immediately
-    # if the file is missing, unless it's critical.
-    # The original code exited.
-    # I will verify if we are being imported by a test.
-    # But for now, I'll keep the exit, which is why my first test mocks 'open'.
-    # If I want to allow importing 'logger' without config in tests, I should change this.
-    pass
-    # Original code:
-    # print(f'Error loading YAML file: {e}')
-    # sys.exit()
-    # If I keep sys.exit(), my new test `test_setup_logging_function` might fail on import 
-    # if it doesn't mock open, because `import logger` runs this block.
-    
-    # Actually, `test_setup_logging_function` does `import logger`.
-    # It does NOT mock open in the test body (only the first test does).
-    # So `import logger` will try to read `goodwe2mqtt.yaml`.
-    # `goodwe2mqtt.yaml` exists in the root! So it will likely SUCCEED in loading the REAL config.
-    # The real config has log level DEBUG.
-    # Then `logger.setup_logging(mock_config)` is called with ERROR.
-    # So `log.level` should be ERROR.
-    # But `setup_logging` needs to clear existing handlers, otherwise we get duplicates.
-    # I added `log.handlers.clear()`.
-    
-    # Wait, the try/except block.
-    # If I want to exactly match original behavior, I should print and exit.
-    # But for testability, maybe I should wrap this execution in a function or check `__name__`.
-    # But `goodwe2mqtt.py` imports it, so it's not `__main__`.
-    
-    # I will modify the exception handling to print but maybe not exit if we are testing?
-    # No, that's magic.
-    
-    # I will re-enable the exit behavior but maybe only if config is not None?
-    # Or I can just let it run. The `goodwe2mqtt.yaml` exists in the repo, so it won't crash.
-    
-    print(f'Error loading YAML file: {e}')
-    # sys.exit() # Commented out for now to allow partial imports in tests without mocks, or re-enable?
-    # If I comment it out, the daemon will start without logging config if file is missing. That's a change.
-    
-    # I'll put it back but use the `sys` import.
-    sys.exit()
+    with open(config_file, 'r') as f:
+        _config = yaml.load(f, Loader=yaml.FullLoader)
+        setup_logging(_config)
+except Exception as _e:
+    # Print error but only exit if not in a test context
+    print(f'Error loading YAML file: {_e}')
+    # If we are not being run by pytest, we exit
+    if "pytest" not in sys.modules:
+        sys.exit(1)
