@@ -1,6 +1,6 @@
 # Implementation Plan: Documentation, Resilience & CI Hardening
 
-## Phase 1: Resilience & Logging Hardening
+## Phase 1: Resilience & Logging Hardening [checkpoint: 64135ef]
 Focus on making the daemon "unbreakable" by handling network failures and providing clear diagnostics.
 
 - [x] Task: Enhanced Error Handling & Logging [96f12b6]
@@ -10,10 +10,10 @@ Focus on making the daemon "unbreakable" by handling network failures and provid
 - [x] Task: Auto-Reconnection Logic [96f12b6]
     - [x] Write failing tests for automatic recovery after a simulated drop in Inverter/MQTT connection
     - [x] Implement exponential backoff reconnection loops for Inverter (UDP) and MQTT (TCP)
-- [~] Task: Health/Heartbeat Reporting
-    - [ ] Write failing tests verifying a periodic 'online' message is sent to a status topic
-    - [ ] Implement a background task that publishes a heartbeat/watchdog signal
-- [ ] Task: Conductor - User Manual Verification 'Resilience & Logging Hardening' (Protocol in workflow.md)
+- [x] Task: Health/Heartbeat Reporting [f628c23]
+    - [x] Write failing tests verifying a periodic 'online' message is sent to a status topic
+    - [x] Implement a background task that publishes a heartbeat/watchdog signal
+- [x] Task: Conductor - User Manual Verification 'Resilience & Logging Hardening' (Protocol in workflow.md) [64135ef]
 
 ## Phase 2: CI/CD Pipeline & Quality Gates
 Automate the quality checks and ensure every change is validated against the test suite and style guide.
