@@ -16,10 +16,46 @@ import tzlocal
 import json
 import yaml
 import sys
+import os
 from logger import log
 from goodwe.inverter import OperationMode
 
 config_file = "goodwe2mqtt.yaml"
+
+def override_config_from_env(config: Dict[str, Any], prefix: str = "G2M") -> None:
+    """Recursively overrides configuration values from environment variables.
+    
+    Args:
+        config: The configuration dictionary to update.
+        prefix: The prefix for environment variables.
+    """
+    for key, value in config.items():
+        if isinstance(value, dict):
+            override_config_from_env(value, f"{prefix}_{key.upper()}")
+        elif isinstance(value, list):
+            # Handle list of items if needed, typically by index e.g. G2M_SECTION_0_KEY
+            # For now, skipping list recursion or implementing basic index support
+            for i, item in enumerate(value):
+                if isinstance(item, dict):
+                    override_config_from_env(item, f"{prefix}_{key.upper()}_{i}")
+        else:
+            env_key = f"{prefix}_{key.upper()}"
+            env_val = os.environ.get(env_key)
+            if env_val is not None:
+                if isinstance(value, bool):
+                    config[key] = env_val.lower() in ('true', '1', 'yes', 'on')
+                elif isinstance(value, int):
+                    try:
+                        config[key] = int(env_val)
+                    except ValueError:
+                        log.warning(f"Invalid integer for {env_key}: {env_val}")
+                elif isinstance(value, float):
+                    try:
+                        config[key] = float(env_val)
+                    except ValueError:
+                        log.warning(f"Invalid float for {env_key}: {env_val}")
+                else:
+                    config[key] = env_val
 
 def dump_to_json(runtime_data: Dict[str, Any]) -> None:
     """Dumps runtime_data to a JSON file with a timestamped filename.
@@ -489,7 +525,7 @@ async def main(config: Dict[str, Any]) -> None:
     await asyncio.gather(*tasks)
 
 def read_config(file_path: str) -> Dict[str, Any]:
-    """Reads the YAML configuration file.
+    """Reads the YAML configuration file and overrides with environment variables.
 
     Args:
         file_path: Path to the configuration file.
@@ -500,6 +536,8 @@ def read_config(file_path: str) -> Dict[str, Any]:
     try:
         with open(file_path, 'r') as f:
             config = yaml.load(f, Loader=yaml.FullLoader)
+        
+        override_config_from_env(config)
         return config
     except Exception as e:
         log.error(f'Error loading YAML file "{file_path}": {e}')

@@ -9,7 +9,8 @@ tzdata==2023.3
 tzlocal==5.0.1
 pytest
 pytest-asyncio
-pytest-covruff
+pytest-cov
+ruff
 mypy
 types-pytz
 types-PyYAML
