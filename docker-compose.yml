@@ -1,0 +1,26 @@
+services:
+  goodwe2mqtt:
+    build: .
+    container_name: goodwe2mqtt
+    restart: unless-stopped
+    volumes:
+      - ./goodwe2mqtt.yaml:/app/goodwe2mqtt.yaml:ro
+      - ./logs:/app/logs
+    env_file: .env
+    # Host networking is often preferred for inverter discovery/communication
+    # but bridge mode with port mapping is more standard for Docker.
+    # For now, using host mode as it's common for IoT/discovery apps.
+    network_mode: host
+
+  # Optional MQTT Broker (Eclipse Mosquitto)
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    container_name: mqtt-broker
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
