@@ -28,7 +28,7 @@ The application supports overriding any YAML configuration value using environme
 ### 3. Start the Stack
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 This will start:
@@ -38,7 +38,7 @@ This will start:
 ### 4. Check Logs
 
 ```bash
-docker-compose logs -f
+docker compose logs -f
 ```
 
 ## Using Docker Run
