@@ -26,8 +26,8 @@ Provide a standard way to run the stack and clear instructions for users.
 ## Phase 3: Automated Multi-Arch CI Pipeline [checkpoint: d709a91]
 Automate the build and distribution process for multiple hardware architectures.
 
-- [ ] Task: Configure GitHub Actions for Docker
-    - [ ] Create/Update `.github/workflows/docker.yml` for building images
-    - [ ] Implement `docker/setup-qemu-action` and `docker/setup-buildx-action` for multi-arch support
-    - [ ] Configure authentication and push to GHCR on tags and main branch
+- [x] Task: Configure GitHub Actions for Docker [fd16570]
+    - [x] Create/Update `.github/workflows/docker.yml` for building images
+    - [x] Implement `docker/setup-qemu-action` and `docker/setup-buildx-action` for multi-arch support
+    - [x] Configure authentication and push to GHCR on tags and main branch
 - [ ] Task: Conductor - User Manual Verification 'Automated Multi-Arch CI Pipeline' (Protocol in workflow.md)
