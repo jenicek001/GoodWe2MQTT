@@ -21,9 +21,9 @@ Provide a standard way to run the stack and clear instructions for users.
 - [x] Task: Docker Documentation [2f6e285]
     - [x] Create `docs/docker.md` (or update README) with detailed instructions
     - [x] Document all supported Environment Variables and volume mount points
-- [ ] Task: Conductor - User Manual Verification 'Orchestration & Documentation' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Orchestration & Documentation' (Protocol in workflow.md) [d709a91]
 
-## Phase 3: Automated Multi-Arch CI Pipeline
+## Phase 3: Automated Multi-Arch CI Pipeline [checkpoint: d709a91]
 Automate the build and distribution process for multiple hardware architectures.
 
 - [ ] Task: Configure GitHub Actions for Docker
