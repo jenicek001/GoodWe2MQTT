@@ -18,9 +18,9 @@ Provide a standard way to run the stack and clear instructions for users.
 - [x] Task: Docker Compose Setup [866549b]
     - [x] Create `docker-compose.yml` with `goodwe2mqtt` and optional `mosquitto` broker
     - [x] Configure volume mounts for `goodwe2mqtt.yaml` and logs
-- [ ] Task: Docker Documentation
-    - [ ] Create `docs/docker.md` (or update README) with detailed instructions
-    - [ ] Document all supported Environment Variables and volume mount points
+- [x] Task: Docker Documentation [2f6e285]
+    - [x] Create `docs/docker.md` (or update README) with detailed instructions
+    - [x] Document all supported Environment Variables and volume mount points
 - [ ] Task: Conductor - User Manual Verification 'Orchestration & Documentation' (Protocol in workflow.md)
 
 ## Phase 3: Automated Multi-Arch CI Pipeline
