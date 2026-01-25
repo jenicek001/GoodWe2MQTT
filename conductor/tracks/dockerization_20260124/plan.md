@@ -15,9 +15,9 @@ Enable the application to run inside a container and support modern configuratio
 ## Phase 2: Orchestration & Documentation
 Provide a standard way to run the stack and clear instructions for users.
 
-- [ ] Task: Docker Compose Setup
-    - [ ] Create `docker-compose.yml` with `goodwe2mqtt` and optional `mosquitto` broker
-    - [ ] Configure volume mounts for `goodwe2mqtt.yaml` and logs
+- [x] Task: Docker Compose Setup [866549b]
+    - [x] Create `docker-compose.yml` with `goodwe2mqtt` and optional `mosquitto` broker
+    - [x] Configure volume mounts for `goodwe2mqtt.yaml` and logs
 - [ ] Task: Docker Documentation
     - [ ] Create `docs/docker.md` (or update README) with detailed instructions
     - [ ] Document all supported Environment Variables and volume mount points
