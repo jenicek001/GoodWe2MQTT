@@ -5,5 +5,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-- [ ] **Track: Dockerization**
+- [x] **Track: Dockerization**
 *Link: [./tracks/dockerization_20260124/](./tracks/dockerization_20260124/)*
