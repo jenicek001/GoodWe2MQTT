@@ -30,4 +30,4 @@ Automate the build and distribution process for multiple hardware architectures.
     - [x] Create/Update `.github/workflows/docker.yml` for building images
     - [x] Implement `docker/setup-qemu-action` and `docker/setup-buildx-action` for multi-arch support
     - [x] Configure authentication and push to GHCR on tags and main branch
-- [ ] Task: Conductor - User Manual Verification 'Automated Multi-Arch CI Pipeline' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Automated Multi-Arch CI Pipeline' (Protocol in workflow.md)
