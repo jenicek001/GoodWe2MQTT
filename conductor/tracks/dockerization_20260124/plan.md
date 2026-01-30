@@ -23,7 +23,7 @@ Provide a standard way to run the stack and clear instructions for users.
     - [x] Document all supported Environment Variables and volume mount points
 - [x] Task: Conductor - User Manual Verification 'Orchestration & Documentation' (Protocol in workflow.md) [d709a91]
 
-## Phase 3: Automated Multi-Arch CI Pipeline [checkpoint: d709a91]
+## Phase 3: Automated Multi-Arch CI Pipeline [checkpoint: 1d320de]
 Automate the build and distribution process for multiple hardware architectures.
 
 - [x] Task: Configure GitHub Actions for Docker [fd16570]
