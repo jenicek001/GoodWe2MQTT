@@ -15,5 +15,6 @@ Daemon to read runtime data and configure GoodWe Inverters reporting and control
 ## Key Features
 - **Asynchronous Data Collection:** A robust asyncio-based loop that polls data from the inverter without blocking.
 - **Configurable MQTT Publishing:** Flexible integration with any MQTT broker, allowing users to define topics and connection settings.
+- **Dockerized Deployment:** Official multi-architecture Docker images for easy deployment on various systems, including Raspberry Pi.
 - **Resilient Communication:** Automatic reconnection logic for both inverter and MQTT broker, with health reporting (heartbeat).
 - **Automated Quality Gates:** Integrated CI pipeline with linting, type checking, and unit testing.

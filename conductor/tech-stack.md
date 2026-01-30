@@ -9,6 +9,11 @@
 - **PyYAML:** For parsing the project's configuration file (`goodwe2mqtt.yaml`).
 - **python-dateutil, pytz, & tzlocal:** For robust handling of timezones and date calculations.
 
+## Infrastructure & Deployment
+- **Docker:** For containerization and consistent runtime environments.
+- **Docker Compose:** For local orchestration and multi-service setups.
+- **GitHub Container Registry (GHCR):** Primary distribution channel for Docker images.
+
 ## Development & Quality Tools
 - **Pytest:** Core testing framework.
 - **Ruff:** Fast Python linter and formatter.
