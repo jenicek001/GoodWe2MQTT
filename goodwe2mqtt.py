@@ -133,7 +133,12 @@ class Goodwe_MQTT:
         self.requested_grid_export_limit: Optional[int] = None
 
         mqtt_topic = f'{mqtt_topic_prefix}/{self.serial_number}'
+        self.mqtt_topic_prefix = mqtt_topic_prefix
+        self.mqtt_topic_base = mqtt_topic
         self.mqtt_control_topic = f'{mqtt_topic}/{mqtt_control_topic_postfix}'
+        self.mqtt_set_topic_prefix = f'{mqtt_topic}/set'
+        self.mqtt_set_topic_wildcard = f'{mqtt_topic}/set/+'
+        self.mqtt_state_topic_prefix = f'{mqtt_topic}/state'
         self.mqtt_runtime_data_topic = f'{mqtt_topic}/{mqtt_runtime_data_topic_postfix}'
         self.mqtt_runtime_data_interval_seconds = timedelta(seconds=mqtt_runtime_data_interval_seconds)
         self.mqtt_fast_runtime_data_topic = f'{mqtt_topic}/{mqtt_fast_runtime_data_topic_postfix}'
@@ -238,14 +243,23 @@ class Goodwe_MQTT:
                     log.info(f'mqtt_client_task {self.serial_number} connected to MQTT broker')
                     async with client.messages() as messages:
                         await client.subscribe(self.mqtt_control_topic)
+                        await client.subscribe(self.mqtt_set_topic_wildcard)
                         async for message in messages:
                             log.info(f'mqtt_client_task {self.serial_number} message received')
+                            topic_str = str(message.topic)
                             payload = message.payload
                             if isinstance(payload, (bytes, bytearray)):
                                 message_payload = payload.decode("utf-8")
                             else:
                                 message_payload = str(payload)
-                            log.info(f'mqtt_client_task {self.serial_number} payload: {message_payload}')
+                            log.info(f'mqtt_client_task {self.serial_number} topic: {topic_str} payload: {message_payload}')
+
+                            # Handle /set/{setting_id} messages
+                            set_prefix = self.mqtt_set_topic_prefix + '/'
+                            if topic_str.startswith(set_prefix):
+                                setting_id = topic_str[len(set_prefix):]
+                                await self.handle_set_message(setting_id, message_payload)
+                                continue
 
                             if 'get_grid_export_limit' in message_payload:
                                 log.info(f'mqtt_client_task {self.serial_number} Getting export limit')
@@ -316,6 +330,144 @@ class Goodwe_MQTT:
             except Exception as e:
                 log.error(f'mqtt_client_task {self.serial_number} MQTT error: {e}. Reconnecting in 5s...')
                 await asyncio.sleep(5)
+
+    # Work mode name → integer value mapping (GoodWe ET series)
+    WORK_MODE_OPTIONS: Dict[str, int] = {
+        "General mode": 0,
+        "Off grid mode": 1,
+        "Backup mode": 2,
+        "Eco mode": 4,
+    }
+
+    async def write_setting(self, setting_id: str, value: Any, retries: int = 3) -> bool:
+        """Writes a setting to the inverter with exponential-backoff retry logic.
+
+        Args:
+            setting_id: The inverter setting identifier.
+            value: The value to write.
+            retries: Maximum number of attempts.
+
+        Returns:
+            True if the write succeeded, False otherwise.
+        """
+        for attempt in range(1, retries + 1):
+            log.info(f'write_setting {self.serial_number} attempt {attempt}/{retries}: {setting_id}={value}')
+            try:
+                await self.inverter.write_setting(setting_id, value)
+                log.info(f'write_setting {self.serial_number} success: {setting_id}={value}')
+                return True
+            except Exception as e:
+                log.error(f'write_setting {self.serial_number} attempt {attempt} failed: {e}')
+                if attempt < retries:
+                    backoff = 2 ** (attempt - 1)
+                    log.info(f'write_setting {self.serial_number} retrying in {backoff}s...')
+                    await asyncio.sleep(backoff)
+        log.error(f'write_setting {self.serial_number} all {retries} attempts failed for {setting_id}')
+        return False
+
+    async def handle_set_message(self, setting_id: str, payload_str: str) -> None:
+        """Handles a message received on a /set/{setting_id} topic.
+
+        Parses the payload, writes the setting to the inverter, reads it back,
+        and publishes the updated value on the corresponding state topic.
+
+        Args:
+            setting_id: The inverter setting identifier extracted from the topic.
+            payload_str: Raw string payload from the MQTT message.
+        """
+        log.info(f'handle_set_message {self.serial_number} setting_id={setting_id} payload={payload_str}')
+        payload_str = payload_str.strip()
+
+        # Determine the value to write
+        if setting_id == 'work_mode':
+            if payload_str in self.WORK_MODE_OPTIONS:
+                value: Any = self.WORK_MODE_OPTIONS[payload_str]
+            else:
+                try:
+                    value = int(payload_str)
+                except ValueError:
+                    log.error(f'handle_set_message {self.serial_number} invalid work_mode value: {payload_str}')
+                    return
+        else:
+            try:
+                # Prefer integer, fall back to float, then string
+                value = int(payload_str)
+            except ValueError:
+                try:
+                    value = float(payload_str)
+                except ValueError:
+                    value = payload_str
+
+        success = await self.write_setting(setting_id, value)
+        if success:
+            # Read back and publish the updated state
+            try:
+                current_value = await self.inverter.read_setting(setting_id)
+                state_topic = f'{self.mqtt_state_topic_prefix}/{setting_id}'
+                await self.send_mqtt_response(state_topic, {setting_id: current_value})
+                log.info(f'handle_set_message {self.serial_number} published state {setting_id}={current_value}')
+            except Exception as e:
+                log.error(f'handle_set_message {self.serial_number} read-back failed for {setting_id}: {e}')
+
+    async def publish_ha_discovery(self) -> None:
+        """Publishes Home Assistant MQTT Discovery payloads for controllable entities."""
+        sn = self.serial_number
+        base = self.mqtt_topic_base
+        device = {
+            "identifiers": [sn],
+            "name": f"GoodWe Inverter {sn}",
+            "manufacturer": "GoodWe",
+            "model": "ET series",
+        }
+
+        entities = [
+            # work_mode – select
+            {
+                "component": "select",
+                "unique_id": f"{sn}_work_mode",
+                "name": "Operation Mode",
+                "command_topic": f"{base}/set/work_mode",
+                "state_topic": f"{base}/state/work_mode",
+                "value_template": "{{ value_json.work_mode }}",
+                "options": list(self.WORK_MODE_OPTIONS.keys()),
+                "device": device,
+            },
+            # battery_charge_current – number
+            {
+                "component": "number",
+                "unique_id": f"{sn}_battery_charge_current",
+                "name": "Battery Charge Current",
+                "command_topic": f"{base}/set/battery_charge_current",
+                "state_topic": f"{base}/state/battery_charge_current",
+                "value_template": "{{ value_json.battery_charge_current }}",
+                "unit_of_measurement": "A",
+                "min": 0,
+                "max": 25,
+                "step": 1,
+                "device": device,
+            },
+            # grid_export_limit – number
+            {
+                "component": "number",
+                "unique_id": f"{sn}_grid_export_limit",
+                "name": "Grid Export Limit",
+                "command_topic": f"{base}/set/grid_export_limit",
+                "state_topic": f"{base}/state/grid_export_limit",
+                "value_template": "{{ value_json.grid_export_limit }}",
+                "unit_of_measurement": "W",
+                "min": 0,
+                "max": 10000,
+                "step": 1,
+                "device": device,
+            },
+        ]
+
+        for entity in entities:
+            component = entity.pop("component")
+            unique_id = entity["unique_id"]
+            discovery_topic = f"homeassistant/{component}/{unique_id}/config"
+            log.info(f'publish_ha_discovery {sn} publishing {discovery_topic}')
+            await self.send_mqtt_response(discovery_topic, entity)
 
     async def get_grid_export_limit(self) -> Optional[int]:
         """Reads the current grid export limit from the inverter.
