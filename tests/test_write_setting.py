@@ -80,6 +80,7 @@ async def test_write_setting_exponential_backoff():
     with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         await gw.write_setting("grid_export_limit", 0, retries=3)
 
+    assert gw.inverter.write_setting.await_count == 3
     assert mock_sleep.await_count == 2
     mock_sleep.assert_any_await(1)
     mock_sleep.assert_any_await(2)

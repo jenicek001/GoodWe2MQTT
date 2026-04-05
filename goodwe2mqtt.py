@@ -255,7 +255,7 @@ class Goodwe_MQTT:
                             log.info(f'mqtt_client_task {self.serial_number} topic: {topic_str} payload: {message_payload}')
 
                             # Handle /set/{setting_id} messages
-                            set_prefix = self.mqtt_set_topic_prefix + '/'
+                            set_prefix = f'{self.mqtt_set_topic_prefix}/'
                             if topic_str.startswith(set_prefix):
                                 setting_id = topic_str[len(set_prefix):]
                                 await self.handle_set_message(setting_id, message_payload)
@@ -396,6 +396,10 @@ class Goodwe_MQTT:
                 try:
                     value = float(payload_str)
                 except ValueError:
+                    log.warning(
+                        f'handle_set_message {self.serial_number} unexpected string payload '
+                        f'for {setting_id}: {payload_str!r}'
+                    )
                     value = payload_str
 
         success = await self.write_setting(setting_id, value)
