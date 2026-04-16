@@ -84,8 +84,11 @@ async def test_mqtt_client_task_subscription():
         except asyncio.CancelledError:
             pass
         
-        mock_client.subscribe.assert_called_once_with(gw.mqtt_control_topic)
+        subscribe_calls = [c.args[0] for c in mock_client.subscribe.call_args_list]
+        assert gw.mqtt_control_topic in subscribe_calls
+        assert gw.mqtt_set_topic_wildcard in subscribe_calls
         assert gw.mqtt_control_topic == "test/TEST_SN/control"
+        assert gw.mqtt_set_topic_wildcard == "test/TEST_SN/set/+"
 
 @pytest.mark.asyncio
 async def test_mqtt_client_task_process_message():

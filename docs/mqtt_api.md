@@ -45,7 +45,7 @@ By default, `<topic_prefix>` is `goodwe2mqtt`.
 
 ## Control Topics (Broker -> Daemon)
 
-### 1. Control Commands
+### 1. Control Commands (Legacy JSON format)
 - **Topic:** `goodwe2mqtt/<serial>/control`
 - **Payload:** JSON object specifying the action.
 
@@ -63,3 +63,55 @@ By default, `<topic_prefix>` is `goodwe2mqtt`.
   `{"set_eco_discharge": 50}` (Value in % power)
 - **Set Eco Charge (Grid to Battery):**
   `{"set_eco_charge": 50, "target_battery_soc": 80}` (Power % and Target SoC %)
+
+---
+
+### 2. Direct Setting Write (`/set/` topics)
+
+Each writable inverter setting has a dedicated topic.  The daemon writes the
+value to the inverter (with automatic retry / exponential backoff), then reads
+the setting back and publishes the confirmed value on the matching state topic.
+
+**Command Topic:** `goodwe2mqtt/<serial>/set/<setting_id>`  
+**State Topic:**   `goodwe2mqtt/<serial>/state/<setting_id>`
+
+Supported settings:
+
+| `setting_id` | Description | Payload type | Valid values |
+|---|---|---|---|
+| `work_mode` | Operation mode | string or integer | `"General mode"` (0), `"Off grid mode"` (1), `"Backup mode"` (2), `"Eco mode"` (4) |
+| `battery_charge_current` | Max battery charge current | integer | 0 – 25 (A) |
+| `grid_export_limit` | Grid export power limit | integer | 0 – 10000 (W) |
+
+**Examples:**
+
+```bash
+# Set operation mode to Eco mode (enables grid charging)
+mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/work_mode -m "Eco mode"
+
+# Set grid export limit to 5000 W
+mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/grid_export_limit -m "5000"
+
+# Set battery charge current to 10 A
+mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/battery_charge_current -m "10"
+```
+
+The state topic payload is a JSON object:
+```json
+{"work_mode": 4}
+{"grid_export_limit": 5000}
+{"battery_charge_current": 10}
+```
+
+---
+
+### 3. Home Assistant MQTT Discovery
+
+On startup the daemon publishes HA MQTT Discovery payloads so that the
+entities appear automatically in Home Assistant.
+
+| Entity | HA Component | Discovery topic |
+|---|---|---|
+| Operation Mode | `select` | `homeassistant/select/<serial>_work_mode/config` |
+| Battery Charge Current | `number` | `homeassistant/number/<serial>_battery_charge_current/config` |
+| Grid Export Limit | `number` | `homeassistant/number/<serial>_grid_export_limit/config` |
