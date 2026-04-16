@@ -7,6 +7,7 @@ This guide explains how to run `goodwe2mqtt` using Docker and Docker Compose.
 - Docker is the supported deployment path.
 - One container can manage multiple inverters when they are listed in `.env` using indexed `G2M_GOODWE_INVERTERS_<index>_*` variables.
 - Run separate containers only when you intentionally need strict isolation between inverter groups (separate brokers, credentials, networks, or restart policy boundaries).
+- **Most users already have an MQTT broker** (e.g. Home Assistant's Mosquitto add-on). In that case, just point `G2M_MQTT_BROKER_IP` at it and run the daemon only.
 
 ## Prerequisites
 
@@ -15,34 +16,44 @@ This guide explains how to run `goodwe2mqtt` using Docker and Docker Compose.
 
 ## Using Docker Compose (Recommended)
 
-Docker Compose is the easiest way to manage the `goodwe2mqtt` service and an optional MQTT broker.
-
 ### 1. Configure Environment Variables
 
-Copy `.env.example` to `.env` and adjust the values as needed:
+Copy `.env.example` to `.env` and adjust the values:
 
 ```bash
 cp .env.example .env
 ```
 
-Set at least one inverter:
+Set at minimum your broker address and at least one inverter:
 
 ```bash
+G2M_MQTT_BROKER_IP=192.168.1.10   # IP of your existing MQTT broker
 G2M_GOODWE_INVERTERS_0_SERIAL_NUMBER=INV1_SERIAL
 G2M_GOODWE_INVERTERS_0_IP_ADDRESS=192.168.1.100
 ```
 
 Add more inverters by increasing the index (`_1_`, `_2_`, ...).
 
-### 2. Start the Stack
+### 2a. Start — daemon only (recommended for existing setups)
+
+Use this when you already have an MQTT broker (Home Assistant, standalone Mosquitto, etc.):
 
 ```bash
 docker compose up -d
 ```
 
-This will start:
-- `goodwe2mqtt`: The main daemon.
-- `mqtt-broker`: An Eclipse Mosquitto instance (optional, see `docker-compose.yml`).
+This starts only the `goodwe2mqtt` daemon.
+
+### 2b. Start — with bundled Mosquitto broker
+
+Use this when you have no existing MQTT broker and want one included.
+Set `G2M_MQTT_BROKER_IP=localhost` in `.env` (both services share host networking), then:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.mqtt.yml up -d
+```
+
+This starts both `goodwe2mqtt` and an Eclipse Mosquitto instance using the config in `mosquitto/config/mosquitto.conf`.
 
 ### 3. Check Logs
 
