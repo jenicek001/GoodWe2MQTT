@@ -1,10 +1,14 @@
-# Stage 1: Builder
-FROM python:3.11-slim as builder
+# Stage 1: Builder — install dependencies via Poetry into an isolated prefix
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+RUN pip install --no-cache-dir poetry==2.1.3
+
+COPY pyproject.toml poetry.lock ./
+
+RUN poetry config virtualenvs.create false \
+    && poetry install --only main --no-root --no-interaction
 
 # Stage 2: Runtime
 FROM python:3.11-slim
@@ -15,16 +19,14 @@ WORKDIR /app
 RUN groupadd -r goodwe && useradd -r -g goodwe goodwe
 
 # Copy installed dependencies from builder
-COPY --from=builder /install /usr/local
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 
-# Copy application code
+# Copy application source
 COPY src/ ./src/
-COPY goodwe2mqtt.py logger.py ./
 
 # Switch to non-root user
 USER goodwe
 
-# Environment variables
 ENV PYTHONUNBUFFERED=1
 
-CMD ["python", "goodwe2mqtt.py"]
+CMD ["python", "src/goodwe2mqtt.py"]

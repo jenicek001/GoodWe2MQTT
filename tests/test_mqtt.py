@@ -68,15 +68,10 @@ async def test_mqtt_client_task_subscription():
     
     # Mock the messages provider
     mock_messages = MagicMock()
-    # async for message in messages: calls __aiter__
     mock_messages.__aiter__ = MagicMock(return_value=mock_messages)
     mock_messages.__anext__ = AsyncMock(side_effect=StopAsyncIteration)
     
-    mock_provider = MagicMock()
-    mock_provider.__aenter__ = AsyncMock(return_value=mock_messages)
-    mock_provider.__aexit__ = AsyncMock()
-    
-    mock_client.messages = MagicMock(return_value=mock_provider)
+    mock_client.messages = mock_messages
     
     with patch("aiomqtt.Client", return_value=mock_client):
         try:
@@ -123,13 +118,9 @@ async def test_mqtt_client_task_process_message():
     # Mock the messages provider iterator to return one message then stop
     mock_messages = MagicMock()
     mock_messages.__aiter__ = MagicMock(return_value=mock_messages)
-    mock_messages.__anext__ = AsyncMock()
-    mock_messages.__anext__.side_effect = [mock_message, StopAsyncIteration]
+    mock_messages.__anext__ = AsyncMock(side_effect=[mock_message, StopAsyncIteration])
     
-    mock_provider = MagicMock()
-    mock_provider.__aenter__ = AsyncMock(return_value=mock_messages)
-    mock_provider.__aexit__ = AsyncMock()
-    mock_client.messages = MagicMock(return_value=mock_provider)
+    mock_client.messages = mock_messages
     
     with patch("aiomqtt.Client", return_value=mock_client), \
          patch.object(gw, 'get_operation_mode', new_callable=AsyncMock) as mock_get_om:

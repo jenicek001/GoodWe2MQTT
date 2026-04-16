@@ -179,10 +179,7 @@ async def test_mqtt_client_task_subscribes_to_set_wildcard():
     mock_messages.__aiter__ = MagicMock(return_value=mock_messages)
     mock_messages.__anext__ = AsyncMock(side_effect=StopAsyncIteration)
 
-    mock_provider = MagicMock()
-    mock_provider.__aenter__ = AsyncMock(return_value=mock_messages)
-    mock_provider.__aexit__ = AsyncMock()
-    mock_client.messages = MagicMock(return_value=mock_provider)
+    mock_client.messages = mock_messages
 
     with patch("aiomqtt.Client", return_value=mock_client):
         try:
@@ -214,10 +211,7 @@ async def test_mqtt_client_task_routes_set_message():
     mock_messages.__aiter__ = MagicMock(return_value=mock_messages)
     mock_messages.__anext__ = AsyncMock(side_effect=[mock_message, StopAsyncIteration])
 
-    mock_provider = MagicMock()
-    mock_provider.__aenter__ = AsyncMock(return_value=mock_messages)
-    mock_provider.__aexit__ = AsyncMock()
-    mock_client.messages = MagicMock(return_value=mock_provider)
+    mock_client.messages = mock_messages
 
     with patch("aiomqtt.Client", return_value=mock_client), \
          patch.object(gw, "handle_set_message", new_callable=AsyncMock) as mock_handle:

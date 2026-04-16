@@ -4,8 +4,9 @@ from unittest.mock import patch, MagicMock
 
 # Helper to clear logger module from sys.modules
 def refresh_logger_module():
-    if 'logger' in sys.modules:
-        del sys.modules['logger']
+    for key in list(sys.modules):
+        if key in ('logger', 'src.logger'):
+            del sys.modules[key]
 
 def test_logger_initialization():
     refresh_logger_module()
