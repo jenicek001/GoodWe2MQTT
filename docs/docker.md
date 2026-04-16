@@ -2,6 +2,12 @@
 
 This guide explains how to run `goodwe2mqtt` using Docker and Docker Compose.
 
+## Deployment Model
+
+- Docker is the supported deployment path.
+- One container can manage multiple inverters when they are listed under `goodwe.inverters` in `goodwe2mqtt.yaml`.
+- Run separate containers only when you intentionally need strict isolation between inverter groups (separate brokers, credentials, networks, or restart policy boundaries).
+
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) installed.
@@ -14,6 +20,17 @@ Docker Compose is the easiest way to manage the `goodwe2mqtt` service and an opt
 ### 1. Setup Configuration
 
 Create a `goodwe2mqtt.yaml` file (you can use the one in the root as a template) and configure your inverter(s).
+
+Example (single container, multiple inverters):
+
+```yaml
+goodwe:
+  inverters:
+    - serial_number: "INV1_SERIAL"
+      ip_address: "192.168.1.100"
+    - serial_number: "INV2_SERIAL"
+      ip_address: "192.168.1.101"
+```
 
 ### 2. Configure Environment Variables
 
@@ -80,5 +97,3 @@ For lists like inverters, use the index:
 ## Security
 
 The container runs as a non-root user (`goodwe`) for improved security.
-
-```

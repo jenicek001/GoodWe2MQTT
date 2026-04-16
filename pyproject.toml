@@ -1,0 +1,31 @@
+[tool.poetry]
+name = "goodwe2mqtt"
+version = "0.1.0"
+description = "GoodWe inverter bridge to MQTT"
+authors = ["GoodWe2MQTT contributors"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+aiomqtt = "1.2.0"
+goodwe = "0.2.31"
+paho-mqtt = "1.6.1"
+python-dateutil = "2.8.2"
+pytz = "2023.3.post1"
+pyyaml = "6.0.1"
+six = "1.16.0"
+tzdata = "2023.3"
+tzlocal = "5.0.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+pytest-asyncio = "*"
+pytest-cov = "*"
+ruff = "*"
+mypy = "*"
+types-pytz = "*"
+types-pyyaml = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
