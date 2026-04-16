@@ -424,7 +424,7 @@ class Goodwe_MQTT:
             "model": "ET series",
         }
 
-        entities = [
+        entities: List[Dict[str, Any]] = [
             # work_mode – select
             {
                 "component": "select",
