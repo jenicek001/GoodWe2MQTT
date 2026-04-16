@@ -638,7 +638,12 @@ class Goodwe_MQTT:
         """
         try:
             settings = await self.inverter.read_settings_data()
-            log.debug(f'read_settings_data {self.serial_number}: {settings}')
+            supported = {k: v for k, v in settings.items() if v is not None}
+            log.info(
+                f'read_settings_data {self.serial_number}: '
+                f'{len(supported)}/{len(settings)} settings supported: '
+                f'{json.dumps(supported, default=str)}'
+            )
             return settings
         except Exception as e:
             log.error(f'read_settings_data {self.serial_number} failed: {e}')

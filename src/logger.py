@@ -66,6 +66,11 @@ def setup_logging(config: Dict[str, Any]) -> None:
         stream_handler.setFormatter(logging.Formatter('%(message)s'))
         log.addHandler(stream_handler)
 
+    # Suppress verbose traceback noise from the goodwe library for unsupported
+    # settings (e.g. eco_mode_enable on older firmware). Real inverter errors are
+    # already surfaced through our own log.error() calls.
+    logging.getLogger('goodwe').setLevel(logging.CRITICAL)
+
 config_file = ".env"
 
 
