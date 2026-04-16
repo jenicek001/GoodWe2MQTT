@@ -42,6 +42,10 @@ graph TD
    pip install -r requirements.txt
    ```
 
+### Source Layout
+- Runtime implementation lives in `src/`.
+- Root-level `goodwe2mqtt.py` and `logger.py` are compatibility entrypoints.
+
 ## Quality Standards
 
 We use the following tools to maintain code quality:

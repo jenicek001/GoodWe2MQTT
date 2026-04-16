@@ -9,10 +9,10 @@ Knowledge and patterns for working on the GoodWe2MQTT project.
 - **Service Pattern**: Cada inverter defined in `goodwe2mqtt.yaml` is managed by an instance of `Goodwe_MQTT` class.
 
 ## Critical Files
-- [goodwe2mqtt.py](goodwe2mqtt.py): Main entry point, contains `Goodwe_MQTT` class with `main_loop` (polling) and `mqtt_client_task` (control).
+- [src/goodwe2mqtt.py](src/goodwe2mqtt.py): Main application implementation with `Goodwe_MQTT`, `main_loop`, and `mqtt_client_task`.
+- [goodwe2mqtt.py](goodwe2mqtt.py): Compatibility entrypoint that loads and runs the implementation from `src/`.
 - [goodwe2mqtt.yaml](goodwe2mqtt.yaml): Central configuration for MQTT brokers, inverter IPs/Serials, and logging.
-- [logger.py](logger.py): Shared logging configuration. Always use `from logger import log`.
-- [install.sh](install.sh): Scaffolding for deployment (user creation, venv, systemd service).
+- [src/logger.py](src/logger.py): Shared logging configuration. Always use `from logger import log`.
 
 ## Patterns & Conventions
 - **Asynchronous Loop**: The `Goodwe_MQTT.main_loop` handles periodic polling. Use `asyncio.sleep` instead of `time.sleep`.
@@ -27,7 +27,7 @@ Knowledge and patterns for working on the GoodWe2MQTT project.
   ```bash
   mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/control -m '{"set_grid_export_limit": 5000}'
   ```
-- **Deployment**: Run [install.sh](install.sh) to set up the environment. The service is managed via `systemctl --user` or global systemd as defined in `goodwe2mqtt.service`.
+- **Deployment**: Docker-first deployment. Use [docs/docker.md](docs/docker.md) and `docker compose up -d`.
 
 ## Integration Points
 - **MQTT Topics**:

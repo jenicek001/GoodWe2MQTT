@@ -18,6 +18,7 @@ RUN groupadd -r goodwe && useradd -r -g goodwe goodwe
 COPY --from=builder /install /usr/local
 
 # Copy application code
+COPY src/ ./src/
 COPY goodwe2mqtt.py logger.py goodwe2mqtt.yaml ./
 
 # Switch to non-root user
