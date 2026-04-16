@@ -3,8 +3,7 @@
 import logging
 import logging.handlers
 from typing import Any, Dict
-import yaml
-import sys
+import os
 
 # Get the root logger
 log = logging.getLogger()
@@ -67,16 +66,37 @@ def setup_logging(config: Dict[str, Any]) -> None:
         stream_handler.setFormatter(logging.Formatter('%(message)s'))
         log.addHandler(stream_handler)
 
-config_file = "goodwe2mqtt.yaml"
+config_file = ".env"
 
-# Load initial configuration and setup logging
-try:
-    with open(config_file, 'r') as f:
-        _config = yaml.load(f, Loader=yaml.FullLoader)
-        setup_logging(_config)
-except Exception as _e:
-    # Print error but only exit if not in a test context
-    print(f'Error loading YAML file: {_e}')
-    # If we are not being run by pytest, we exit
-    if "pytest" not in sys.modules:
-        sys.exit(1)
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.lower() in {"true", "1", "yes", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _load_logger_config() -> Dict[str, Any]:
+    return {
+        "logger": {
+            "log_file": os.environ.get("G2M_LOG_FILE", "goodwe2mqtt.log"),
+            "log_level": os.environ.get("G2M_LOG_LEVEL", "DEBUG"),
+            "log_to_console": _env_bool("G2M_LOG_TO_CONSOLE", True),
+            "log_to_file": _env_bool("G2M_LOG_TO_FILE", True),
+            "log_rotate": _env_bool("G2M_LOG_ROTATE", True),
+            "log_rotate_size": _env_int("G2M_LOG_ROTATE_SIZE", 1048576),
+            "log_rotate_count": _env_int("G2M_LOG_ROTATE_COUNT", 5),
+        }
+    }
+
+setup_logging(_load_logger_config())

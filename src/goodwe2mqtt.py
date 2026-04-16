@@ -9,18 +9,61 @@ import asyncio
 import aiomqtt
 import goodwe
 import time
+import copy
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 import pytz
 import tzlocal
 import json
-import yaml
 import sys
 import os
+import re
 from logger import log
 from goodwe.inverter import OperationMode
 
-config_file = "goodwe2mqtt.yaml"
+config_file = ".env"
+
+DEFAULT_CONFIG: Dict[str, Any] = {
+    "mqtt": {
+        "broker_ip": "",
+        "broker_port": 1883,
+        "username": "",
+        "password": "",
+        "client_id": "goodwe2mqtt",
+        "topic_prefix": "goodwe2mqtt",
+        "runtime_data_topic_postfix": "runtime_data",
+        "runtime_data_interval_seconds": 5,
+        "fast_runtime_data_topic_postfix": "fast_runtime_data",
+        "fast_runtime_data_interval_seconds": 1,
+        "control_topic_postfix": "control",
+        "grid_export_limit_topic_postfix": "grid_export_limit",
+    },
+    "goodwe": {
+        "inverters": []
+    },
+    "logger": {
+        "log_file": "goodwe2mqtt.log",
+        "log_level": "DEBUG",
+        "log_to_console": True,
+        "log_to_file": True,
+        "log_rotate": True,
+        "log_rotate_size": 1048576,
+        "log_rotate_count": 5,
+    },
+    "influxdb": {
+        "host": "",
+        "port": 8086,
+        "database": "openhab",
+        "username": "",
+        "password": "",
+        "measurement": "goodwe",
+    },
+}
+
+
+def _build_default_config() -> Dict[str, Any]:
+    """Creates a deep copy of the default runtime configuration."""
+    return copy.deepcopy(DEFAULT_CONFIG)
 
 def override_config_from_env(config: Dict[str, Any], prefix: str = "G2M") -> None:
     """Recursively overrides configuration values from environment variables.
@@ -56,6 +99,27 @@ def override_config_from_env(config: Dict[str, Any], prefix: str = "G2M") -> Non
                         log.warning(f"Invalid float for {env_key}: {env_val}")
                 else:
                     config[key] = env_val
+
+
+def override_inverters_from_env(config: Dict[str, Any], prefix: str = "G2M") -> None:
+    """Overrides inverter list from indexed environment variables."""
+    inverter_pattern = re.compile(
+        rf"^{re.escape(prefix)}_GOODWE_INVERTERS_(\d+)_(SERIAL_NUMBER|IP_ADDRESS)$"
+    )
+    inverters = config["goodwe"]["inverters"]
+
+    for env_key, env_val in os.environ.items():
+        match = inverter_pattern.match(env_key)
+        if not match:
+            continue
+
+        index = int(match.group(1))
+        field_name = match.group(2).lower()
+
+        while len(inverters) <= index:
+            inverters.append({"serial_number": "", "ip_address": ""})
+
+        inverters[index][field_name] = env_val
 
 def dump_to_json(runtime_data: Dict[str, Any]) -> None:
     """Dumps runtime_data to a JSON file with a timestamped filename.
@@ -681,22 +745,37 @@ async def main(config: Dict[str, Any]) -> None:
     await asyncio.gather(*tasks)
 
 def read_config(file_path: str) -> Dict[str, Any]:
-    """Reads the YAML configuration file and overrides with environment variables.
+    """Builds configuration from defaults and environment variables.
 
     Args:
-        file_path: Path to the configuration file.
+        file_path: Unused, kept for backwards-compatible function signature.
 
     Returns:
         The loaded configuration dictionary.
     """
     try:
-        with open(file_path, 'r') as f:
-            config = yaml.load(f, Loader=yaml.FullLoader)
-        
+        config = _build_default_config()
         override_config_from_env(config)
+        override_inverters_from_env(config)
+
+        if not config["goodwe"]["inverters"]:
+            log.error(
+                "No inverters configured. Set G2M_GOODWE_INVERTERS_<index>_SERIAL_NUMBER "
+                "and G2M_GOODWE_INVERTERS_<index>_IP_ADDRESS."
+            )
+            sys.exit(1)
+
+        for inverter in config["goodwe"]["inverters"]:
+            if not inverter.get("serial_number") or not inverter.get("ip_address"):
+                log.error(
+                    "Each inverter must define both serial_number and ip_address "
+                    "via G2M_GOODWE_INVERTERS_<index>_* environment variables."
+                )
+                sys.exit(1)
+
         return config
     except Exception as e:
-        log.error(f'Error loading YAML file "{file_path}": {e}')
+        log.error(f'Error loading configuration from environment: {e}')
         sys.exit(1)
 
 if __name__ == '__main__':

@@ -4,7 +4,6 @@ services:
     container_name: goodwe2mqtt
     restart: unless-stopped
     volumes:
-      - ./goodwe2mqtt.yaml:/app/goodwe2mqtt.yaml:ro
       - ./logs:/app/logs
     env_file: .env
     # Host networking is often preferred for inverter discovery/communication

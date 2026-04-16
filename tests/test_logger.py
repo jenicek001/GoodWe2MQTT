@@ -10,23 +10,7 @@ def refresh_logger_module():
 def test_logger_initialization():
     refresh_logger_module()
     
-    with patch('builtins.open', create=True), \
-         patch('yaml.load') as mock_yaml_load, \
-         patch('logging.FileHandler'):
-        
-        # Setup mock config
-        mock_yaml_load.return_value = {
-            'logger': {
-                'log_level': 'INFO',
-                'log_to_file': False,
-                'log_file': 'dummy.log',
-                'log_to_console': True,
-                'log_rotate': False,
-                'log_rotate_size': 1000,
-                'log_rotate_count': 1
-            }
-        }
-            
+    with patch.dict("os.environ", {"G2M_LOG_LEVEL": "INFO", "G2M_LOG_TO_FILE": "false"}, clear=False):
         import logger
         
         # Check if the logger level was set correctly
@@ -36,24 +20,7 @@ def test_setup_logging_function():
     """Test the setup_logging function directly."""
     refresh_logger_module()
 
-    # We mock the import-time execution to avoid crashes
-    with patch('builtins.open', create=True), \
-         patch('yaml.load') as mock_yaml_load, \
-         patch('logging.FileHandler'):
-         
-         # Return a safe config for the import time
-         mock_yaml_load.return_value = {
-            'logger': {
-                'log_level': 'DEBUG', # Default in import
-                'log_to_file': False,
-                'log_file': 'dummy.log',
-                'log_to_console': False,
-                'log_rotate': False,
-                'log_rotate_size': 0,
-                'log_rotate_count': 0
-            }
-         }
-         
+    with patch.dict("os.environ", {"G2M_LOG_TO_FILE": "false"}, clear=False):
          import logger
     
     # Now we test the function with a DIFFERENT config
@@ -77,24 +44,7 @@ def test_setup_logging_file_rotate():
     """Test file logging with rotation."""
     refresh_logger_module()
     
-    # Mock import time
-    with patch('builtins.open', create=True), \
-         patch('yaml.load') as mock_yaml_load, \
-         patch('logging.FileHandler'):
-         
-         # Safe config for import
-         mock_yaml_load.return_value = {
-            'logger': {
-                'log_level': 'INFO',
-                'log_to_file': False,
-                'log_file': 'dummy.log',
-                'log_to_console': False,
-                'log_rotate': False,
-                'log_rotate_size': 0,
-                'log_rotate_count': 0
-            }
-         }
-         
+    with patch.dict("os.environ", {"G2M_LOG_TO_FILE": "false"}, clear=False):
          import logger
 
     mock_config = {

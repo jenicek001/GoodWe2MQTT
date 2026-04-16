@@ -19,7 +19,7 @@ COPY --from=builder /install /usr/local
 
 # Copy application code
 COPY src/ ./src/
-COPY goodwe2mqtt.py logger.py goodwe2mqtt.yaml ./
+COPY goodwe2mqtt.py logger.py ./
 
 # Switch to non-root user
 USER goodwe
