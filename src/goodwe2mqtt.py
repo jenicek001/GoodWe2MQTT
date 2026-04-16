@@ -305,89 +305,88 @@ class Goodwe_MQTT:
                     username=self.mqtt_username, password=self.mqtt_password
                 ) as client:
                     log.info(f'mqtt_client_task {self.serial_number} connected to MQTT broker')
-                    async with client.messages() as messages:
-                        await client.subscribe(self.mqtt_control_topic)
-                        await client.subscribe(self.mqtt_set_topic_wildcard)
-                        async for message in messages:
-                            log.info(f'mqtt_client_task {self.serial_number} message received')
-                            topic_str = str(message.topic)
-                            payload = message.payload
-                            if isinstance(payload, (bytes, bytearray)):
-                                message_payload = payload.decode("utf-8")
-                            else:
-                                message_payload = str(payload)
-                            log.info(f'mqtt_client_task {self.serial_number} topic: {topic_str} payload: {message_payload}')
+                    await client.subscribe(self.mqtt_control_topic)
+                    await client.subscribe(self.mqtt_set_topic_wildcard)
+                    async for message in client.messages:
+                        log.info(f'mqtt_client_task {self.serial_number} message received')
+                        topic_str = str(message.topic)
+                        payload = message.payload
+                        if isinstance(payload, (bytes, bytearray)):
+                            message_payload = payload.decode("utf-8")
+                        else:
+                            message_payload = str(payload)
+                        log.info(f'mqtt_client_task {self.serial_number} topic: {topic_str} payload: {message_payload}')
 
-                            # Handle /set/{setting_id} messages
-                            set_prefix = f'{self.mqtt_set_topic_prefix}/'
-                            if topic_str.startswith(set_prefix):
-                                setting_id = topic_str[len(set_prefix):]
-                                await self.handle_set_message(setting_id, message_payload)
-                                continue
+                        # Handle /set/{setting_id} messages
+                        set_prefix = f'{self.mqtt_set_topic_prefix}/'
+                        if topic_str.startswith(set_prefix):
+                            setting_id = topic_str[len(set_prefix):]
+                            await self.handle_set_message(setting_id, message_payload)
+                            continue
 
-                            if 'get_grid_export_limit' in message_payload:
-                                log.info(f'mqtt_client_task {self.serial_number} Getting export limit')
+                        if 'get_grid_export_limit' in message_payload:
+                            log.info(f'mqtt_client_task {self.serial_number} Getting export limit')
+                            self.grid_export_limit = await self.get_grid_export_limit()
+                            if self.grid_export_limit is not None:
+                                await self.send_mqtt_export_limit(self.grid_export_limit)
+
+                        elif 'set_grid_export_limit' in message_payload:
+                            try:
+                                data = json.loads(message_payload)
+                                self.requested_grid_export_limit = int(data['set_grid_export_limit'])
+                                log.info(f'mqtt_client_task {self.serial_number} Setting export limit: {self.requested_grid_export_limit}')
+                                await self.set_grid_export_limit(self.requested_grid_export_limit)
                                 self.grid_export_limit = await self.get_grid_export_limit()
                                 if self.grid_export_limit is not None:
                                     await self.send_mqtt_export_limit(self.grid_export_limit)
+                            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                                log.error(f'mqtt_client_task {self.serial_number} Invalid payload: {e}')
 
-                            elif 'set_grid_export_limit' in message_payload:
-                                try:
-                                    data = json.loads(message_payload)
-                                    self.requested_grid_export_limit = int(data['set_grid_export_limit'])
-                                    log.info(f'mqtt_client_task {self.serial_number} Setting export limit: {self.requested_grid_export_limit}')
-                                    await self.set_grid_export_limit(self.requested_grid_export_limit)
-                                    self.grid_export_limit = await self.get_grid_export_limit()
-                                    if self.grid_export_limit is not None:
-                                        await self.send_mqtt_export_limit(self.grid_export_limit)
-                                except (json.JSONDecodeError, KeyError, ValueError) as e:
-                                    log.error(f'mqtt_client_task {self.serial_number} Invalid payload: {e}')
+                        elif 'get_operation_mode' in message_payload:
+                            log.info(f'mqtt_client_task {self.serial_number} Getting operation mode')
+                            await self.get_operation_mode()
 
-                            elif 'get_operation_mode' in message_payload:
-                                log.info(f'mqtt_client_task {self.serial_number} Getting operation mode')
-                                await self.get_operation_mode()
-
-                            elif 'set_eco_discharge' in message_payload:
-                                try:
-                                    data = json.loads(message_payload)
-                                    power = int(data['set_eco_discharge'])
-                                    if 0 <= power <= 100:
-                                        log.info(f'mqtt_client_task {self.serial_number} Setting eco discharge: {power}')
-                                        await self.inverter.set_operation_mode(
-                                            operation_mode=OperationMode.ECO_DISCHARGE, eco_mode_power=power
-                                        )
-                                        await self.get_operation_mode()
-                                    else:
-                                        log.error(f'mqtt_client_task {self.serial_number} Invalid power: {power}')
-                                except (json.JSONDecodeError, KeyError, ValueError) as e:
-                                    log.error(f'mqtt_client_task {self.serial_number} Invalid payload: {e}')
-
-                            elif 'set_eco_charge' in message_payload:
-                                try:
-                                    data = json.loads(message_payload)
-                                    power = int(data['set_eco_charge'])
-                                    soc = int(data['target_battery_soc'])
-                                    if 0 <= power <= 100 and 0 <= soc <= 100:
-                                        log.info(f'mqtt_client_task {self.serial_number} Setting eco charge: {power}, SoC: {soc}')
-                                        await self.inverter.set_operation_mode(
-                                            operation_mode=OperationMode.ECO_CHARGE, eco_mode_power=power, eco_mode_soc=soc
-                                        )
-                                        await self.get_operation_mode()
-                                    else:
-                                        log.error(f'mqtt_client_task {self.serial_number} Invalid params: {power}, {soc}')
-                                except (json.JSONDecodeError, KeyError, ValueError) as e:
-                                    log.error(f'mqtt_client_task {self.serial_number} Invalid payload: {e}')
-
-                            elif 'set_general_operation_mode' in message_payload:
-                                log.info(f'mqtt_client_task {self.serial_number} Setting general mode')
-                                try:
-                                    await self.inverter.set_operation_mode(operation_mode=OperationMode.GENERAL)
+                        elif 'set_eco_discharge' in message_payload:
+                            try:
+                                data = json.loads(message_payload)
+                                power = int(data['set_eco_discharge'])
+                                if 0 <= power <= 100:
+                                    log.info(f'mqtt_client_task {self.serial_number} Setting eco discharge: {power}')
+                                    await self.inverter.set_operation_mode(
+                                        operation_mode=OperationMode.ECO_DISCHARGE, eco_mode_power=power
+                                    )
                                     await self.get_operation_mode()
-                                except Exception as e:
-                                    log.error(f'mqtt_client_task {self.serial_number} Error: {e}')
+                                else:
+                                    log.error(f'mqtt_client_task {self.serial_number} Invalid power: {power}')
+                            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                                log.error(f'mqtt_client_task {self.serial_number} Invalid payload: {e}')
 
-                            else:
-                                log.error(f'mqtt_client_task {self.serial_number} Invalid command: {message_payload}')
+                        elif 'set_eco_charge' in message_payload:
+                            try:
+                                data = json.loads(message_payload)
+                                power = int(data['set_eco_charge'])
+                                soc = int(data['target_battery_soc'])
+                                if 0 <= power <= 100 and 0 <= soc <= 100:
+                                    log.info(f'mqtt_client_task {self.serial_number} Setting eco charge: {power}, SoC: {soc}')
+                                    await self.inverter.set_operation_mode(
+                                        operation_mode=OperationMode.ECO_CHARGE, eco_mode_power=power, eco_mode_soc=soc
+                                    )
+                                    await self.get_operation_mode()
+                                else:
+                                    log.error(f'mqtt_client_task {self.serial_number} Invalid params: {power}, {soc}')
+                            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                                log.error(f'mqtt_client_task {self.serial_number} Invalid payload: {e}')
+
+                        elif 'set_general_operation_mode' in message_payload:
+                            log.info(f'mqtt_client_task {self.serial_number} Setting general mode')
+                            try:
+                                await self.inverter.set_operation_mode(operation_mode=OperationMode.GENERAL)
+                                await self.get_operation_mode()
+                            except Exception as e:
+                                log.error(f'mqtt_client_task {self.serial_number} Error: {e}')
+
+                        else:
+                            log.error(f'mqtt_client_task {self.serial_number} Invalid command: {message_payload}')
             
             except asyncio.CancelledError:
                 raise
