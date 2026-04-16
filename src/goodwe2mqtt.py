@@ -328,6 +328,7 @@ class Goodwe_MQTT:
                             log.info(f'mqtt_client_task {self.serial_number} Getting export limit')
                             self.grid_export_limit = await self.get_grid_export_limit()
                             if self.grid_export_limit is not None:
+                                log.info(f'mqtt_client_task {self.serial_number} Got export limit: {self.grid_export_limit}')
                                 await self.send_mqtt_export_limit(self.grid_export_limit)
 
                         elif 'set_grid_export_limit' in message_payload:
@@ -338,6 +339,7 @@ class Goodwe_MQTT:
                                 await self.set_grid_export_limit(self.requested_grid_export_limit)
                                 self.grid_export_limit = await self.get_grid_export_limit()
                                 if self.grid_export_limit is not None:
+                                    log.info(f'mqtt_client_task {self.serial_number} Confirmed export limit: {self.grid_export_limit}')
                                     await self.send_mqtt_export_limit(self.grid_export_limit)
                             except (json.JSONDecodeError, KeyError, ValueError) as e:
                                 log.error(f'mqtt_client_task {self.serial_number} Invalid payload: {e}')
@@ -638,7 +640,12 @@ class Goodwe_MQTT:
         """
         try:
             settings = await self.inverter.read_settings_data()
-            log.debug(f'read_settings_data {self.serial_number}: {settings}')
+            supported = {k: v for k, v in settings.items() if v is not None}
+            log.info(
+                f'read_settings_data {self.serial_number}: '
+                f'{len(supported)}/{len(settings)} settings supported: '
+                f'{json.dumps(supported, default=str)}'
+            )
             return settings
         except Exception as e:
             log.error(f'read_settings_data {self.serial_number} failed: {e}')
