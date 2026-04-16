@@ -7,15 +7,15 @@ package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.11"
-aiomqtt = "1.2.0"
-goodwe = "0.2.31"
-paho-mqtt = "1.6.1"
-python-dateutil = "2.8.2"
-pytz = "2023.3.post1"
-pyyaml = "6.0.1"
-six = "1.16.0"
-tzdata = "2023.3"
-tzlocal = "5.0.1"
+aiomqtt = "^2.5.1"
+goodwe = "^0.4.10"
+paho-mqtt = "^2.1.0"
+python-dateutil = "^2.9.0.post0"
+pytz = "^2026.1.post1"
+pyyaml = "^6.0.3"
+six = "^1.17.0"
+tzdata = "^2026.1"
+tzlocal = "^5.3.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"
