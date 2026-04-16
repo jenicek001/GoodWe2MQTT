@@ -1,0 +1,21 @@
+# Optional override: bundled Eclipse Mosquitto MQTT broker.
+#
+# Use this when you do NOT already have an MQTT broker in your setup.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.mqtt.yml up -d
+#
+# Set G2M_MQTT_BROKER_IP=localhost in your .env (host networking is used).
+
+services:
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    container_name: mqtt-broker
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
