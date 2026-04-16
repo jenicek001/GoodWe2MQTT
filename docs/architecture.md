@@ -4,7 +4,7 @@
 flowchart LR
     subgraph Runtime["GoodWe2MQTT Container"]
         App["src/goodwe2mqtt.py\nGoodwe_MQTT per inverter"]
-        Config["goodwe2mqtt.yaml\n+ G2M_* env overrides"]
+        Config[".env (G2M_* variables)"]
         Logs["logs volume"]
     end
 
