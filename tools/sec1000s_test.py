@@ -15,11 +15,16 @@ Run with: python tools/sec1000s_test.py
 import socket
 import struct
 
-HOST             = "192.168.33.169"
-PORT             = 1234
-LIMIT_KW         = 2.5    # kW — target grid export limit (2500 W)
-TIMEOUT          = 10     # seconds
+HOST              = "192.168.33.169"
+PORT              = 1234
+LIMIT_KW          = 2.5    # kW — target grid export limit (2500 W)
+TIMEOUT           = 10     # seconds
 SCAN_THREE_PHASES = False  # False = measure each phase separately (default)
+
+# Safety guard: never allow a limit at or below this value.
+# SEC1000S treats limit <= min as "export disabled", which triggers a grid-export
+# penalty.  This script will abort before sending any such command.
+MIN_LIMIT_KW      = 0.1   # kW — absolute floor; raise if your tariff requires more
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +108,15 @@ def set_export_limit_cmd(limit_kw: float, total_capacity_kw: float,
     """Set the export limit value (cmd 0x42).
 
     Returns the raw rx_payload for inspection.
+    Raises ValueError if limit_kw is at or below MIN_LIMIT_KW to prevent
+    accidentally disabling export.
     """
+    if limit_kw <= MIN_LIMIT_KW:
+        raise ValueError(
+            f"Refusing to set export limit to {limit_kw} kW — this is at or "
+            f"below the safety floor MIN_LIMIT_KW={MIN_LIMIT_KW} kW.  "
+            "Sending such a value would effectively disable grid export."
+        )
     scan_int = 2 if scan_three_phases else 1
     payload = bytearray(16)
     payload[0:5] = b'\x00\x0e\x01\x01\x42'
@@ -115,7 +128,13 @@ def set_export_limit_cmd(limit_kw: float, total_capacity_kw: float,
 
 
 def enable_value_mode() -> bytes:
-    """Arm VALUE-mode export limit control on the SEC1000S (cmd 0x40/0x01)."""
+    """Arm VALUE-mode export limit control on the SEC1000S (cmd 0x40/0x01).
+
+    This sends the ON variant of the VALUE-mode command (byte[5]=0x01).
+    The disable variant (byte[5]=0x02, payload b'\x00\x06\x01\x01\x40\x02\x00\x44')
+    is intentionally NOT implemented here — calling it would turn off the
+    export limit control entirely and expose the installer to grid penalties.
+    """
     payload = b'\x00\x06\x01\x01\x40\x01\x00\x43'
     return _tx_rx(payload, expected_response_size=6)
 
@@ -125,7 +144,16 @@ def enable_value_mode() -> bytes:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    print(f"=== SEC1000S prototype — {HOST}:{PORT} ===\n")
+    # Safety check before touching the device
+    if LIMIT_KW <= MIN_LIMIT_KW:
+        raise SystemExit(
+            f"ERROR: LIMIT_KW={LIMIT_KW} kW is at or below the safety floor "
+            f"MIN_LIMIT_KW={MIN_LIMIT_KW} kW.  Edit LIMIT_KW to a positive value "
+            "above the floor before running this script."
+        )
+
+    print(f"=== SEC1000S prototype — {HOST}:{PORT} ===")
+    print(f"    Target limit : {LIMIT_KW} kW  (safety floor: >{MIN_LIMIT_KW} kW)\n")
 
     # Step 1: read current settings (confirms connectivity + gets total_capacity)
     print("--- Step 1: Read current export limit ---")
