@@ -7,8 +7,8 @@ Run with: python tools/sec1000s_test.py
 import asyncio
 import goodwe
 
-HOST = "192.168.1.XXX"  # <-- set to your SEC1000S IP address
-LIMIT = 3000            # W to set as grid export limit
+HOST = "192.168.33.169"  # <-- set to your SEC1000S IP address
+LIMIT = 2500            # W to set as grid export limit
 
 
 async def main() -> None:
