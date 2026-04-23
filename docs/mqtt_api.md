@@ -54,7 +54,7 @@ By default, `<topic_prefix>` is `goodwe2mqtt`.
 - **Get Grid Export Limit:**
   `{"get_grid_export_limit": 1}`
 - **Set Grid Export Limit:**
-  `{"set_grid_export_limit": 3000}` (Value in Watts)
+  `{"set_grid_export_limit": 3000}` (Value in Watts, valid range 1-10000)
 - **Get Operation Mode:**
   `{"get_operation_mode": 1}`
 - **Set General Operation Mode:**
@@ -81,7 +81,7 @@ Supported settings:
 |---|---|---|---|
 | `work_mode` | Operation mode | string or integer | `"General mode"` (0), `"Off grid mode"` (1), `"Backup mode"` (2), `"Eco mode"` (4) |
 | `battery_charge_current` | Max battery charge current | integer | 0 – 25 (A) |
-| `grid_export_limit` | Grid export power limit | integer | 0 – 10000 (W) |
+| `grid_export_limit` | Grid export power limit | integer | 1 – 10000 (W) |
 
 **Examples:**
 

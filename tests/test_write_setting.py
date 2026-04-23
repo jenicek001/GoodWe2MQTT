@@ -161,6 +161,18 @@ async def test_handle_set_message_write_failure_no_publish():
     mock_pub.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_handle_set_message_rejects_grid_export_limit_zero():
+    """handle_set_message should reject grid_export_limit=0 (disable command)."""
+    gw = make_gw()
+    gw.inverter = AsyncMock()
+
+    with patch.object(gw, "write_setting", new_callable=AsyncMock) as mock_write:
+        await gw.handle_set_message("grid_export_limit", "0")
+
+    mock_write.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # mqtt_client_task – /set/ wildcard subscription
 # ---------------------------------------------------------------------------
@@ -272,7 +284,7 @@ async def test_publish_ha_discovery_grid_export_limit_range():
         if "grid_export_limit" in c.args[0] and "number" in c.args[0]
     )
     payload = gel_call.args[1]
-    assert payload["min"] == 0
+    assert payload["min"] == 1
     assert payload["max"] == 10000
     assert payload["unit_of_measurement"] == "W"
 

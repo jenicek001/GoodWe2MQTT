@@ -134,3 +134,28 @@ async def test_get_operation_mode():
         mock_send.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_set_grid_export_limit_rejects_zero():
+    """set_grid_export_limit should reject 0 to avoid disabling limit control."""
+    with patch("asyncio.ensure_future"):
+        gw = goodwe2mqtt.Goodwe_MQTT(
+            serial_number="TEST_SN",
+            ip_address="1.2.3.4",
+            mqtt_broker_ip="127.0.0.1",
+            mqtt_broker_port=1883,
+            mqtt_username="",
+            mqtt_password="",
+            mqtt_topic_prefix="test",
+            mqtt_control_topic_postfix="control",
+            mqtt_runtime_data_topic_postfix="data",
+            mqtt_runtime_data_interval_seconds=5,
+            mqtt_fast_runtime_data_topic_postfix="fast",
+            mqtt_fast_runtime_data_interval_seconds=1,
+            mqtt_grid_export_limit_topic_postfix="limit"
+        )
+
+    gw.inverter = AsyncMock()
+    await gw.set_grid_export_limit(0)
+
+    gw.inverter.set_grid_export_limit.assert_not_awaited()
+

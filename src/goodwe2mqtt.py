@@ -151,6 +151,8 @@ def get_timezone_aware_local_time() -> datetime:
 
 class Goodwe_MQTT:
     """Handles communication between a GoodWe inverter and an MQTT broker."""
+    GRID_EXPORT_LIMIT_MIN_WATTS = 1
+    GRID_EXPORT_LIMIT_MAX_WATTS = 10000
 
     def __init__(
         self,
@@ -335,6 +337,14 @@ class Goodwe_MQTT:
                             try:
                                 data = json.loads(message_payload)
                                 self.requested_grid_export_limit = int(data['set_grid_export_limit'])
+                                if not self.is_valid_grid_export_limit(self.requested_grid_export_limit):
+                                    log.error(
+                                        f'mqtt_client_task {self.serial_number} refusing invalid '
+                                        f'export limit (W): {self.requested_grid_export_limit}. '
+                                        f'Allowed range: {self.GRID_EXPORT_LIMIT_MIN_WATTS}-'
+                                        f'{self.GRID_EXPORT_LIMIT_MAX_WATTS}'
+                                    )
+                                    continue
                                 log.info(f'mqtt_client_task {self.serial_number} Setting export limit: {self.requested_grid_export_limit}')
                                 await self.set_grid_export_limit(self.requested_grid_export_limit)
                                 self.grid_export_limit = await self.get_grid_export_limit()
@@ -404,6 +414,13 @@ class Goodwe_MQTT:
         "Eco mode": 4,
     }
 
+    def is_valid_grid_export_limit(self, grid_export_limit_watts: int) -> bool:
+        """Validates grid export limit in watts.
+
+        Value 0 is intentionally rejected to avoid disabling export limit control.
+        """
+        return self.GRID_EXPORT_LIMIT_MIN_WATTS <= grid_export_limit_watts <= self.GRID_EXPORT_LIMIT_MAX_WATTS
+
     async def write_setting(self, setting_id: str, value: Any, retries: int = 3) -> bool:
         """Writes a setting to the inverter with exponential-backoff retry logic.
 
@@ -467,6 +484,21 @@ class Goodwe_MQTT:
                     )
                     value = payload_str
 
+        if setting_id == 'grid_export_limit':
+            if not isinstance(value, int):
+                log.error(
+                    f'handle_set_message {self.serial_number} invalid grid_export_limit type: '
+                    f'{payload_str!r}. Expected integer watts.'
+                )
+                return
+            if not self.is_valid_grid_export_limit(value):
+                log.error(
+                    f'handle_set_message {self.serial_number} refusing invalid grid_export_limit '
+                    f'(W): {value}. Allowed range: {self.GRID_EXPORT_LIMIT_MIN_WATTS}-'
+                    f'{self.GRID_EXPORT_LIMIT_MAX_WATTS}'
+                )
+                return
+
         success = await self.write_setting(setting_id, value)
         if success:
             # Read back and publish the updated state
@@ -524,8 +556,8 @@ class Goodwe_MQTT:
                 "state_topic": f"{base}/state/grid_export_limit",
                 "value_template": "{{ value_json.grid_export_limit }}",
                 "unit_of_measurement": "W",
-                "min": 0,
-                "max": 10000,
+                "min": self.GRID_EXPORT_LIMIT_MIN_WATTS,
+                "max": self.GRID_EXPORT_LIMIT_MAX_WATTS,
                 "step": 1,
                 "device": device,
             },
@@ -558,6 +590,13 @@ class Goodwe_MQTT:
         Args:
             requested_grid_export_limit: The numeric limit to set.
         """
+        if not self.is_valid_grid_export_limit(requested_grid_export_limit):
+            log.error(
+                f'set_grid_export_limit {self.serial_number} refusing invalid value '
+                f'(W): {requested_grid_export_limit}. Allowed range: '
+                f'{self.GRID_EXPORT_LIMIT_MIN_WATTS}-{self.GRID_EXPORT_LIMIT_MAX_WATTS}'
+            )
+            return
         try:
             await self.inverter.set_grid_export_limit(requested_grid_export_limit)
             log.debug(f'set_grid_export_limit {self.serial_number}: {requested_grid_export_limit}')
