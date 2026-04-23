@@ -3,11 +3,12 @@ import asyncio
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 import goodwe2mqtt
+from conftest import suppress_ensure_future
 
 
 def make_gw() -> goodwe2mqtt.Goodwe_MQTT:
     """Create a Goodwe_MQTT instance with asyncio tasks suppressed."""
-    with patch("asyncio.ensure_future"):
+    with patch("asyncio.ensure_future", side_effect=suppress_ensure_future):
         return goodwe2mqtt.Goodwe_MQTT(
             serial_number="TEST_SN",
             ip_address="1.2.3.4",

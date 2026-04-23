@@ -5,6 +5,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import goodwe2mqtt
+from conftest import suppress_ensure_future
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +34,7 @@ def make_sec(**kwargs) -> goodwe2mqtt.SEC1000S_MQTT:
         mqtt_topic_prefix="goodwe2mqtt",
     )
     defaults.update(kwargs)
-    with patch("asyncio.ensure_future"):
+    with patch("asyncio.ensure_future", side_effect=suppress_ensure_future):
         return goodwe2mqtt.SEC1000S_MQTT(**defaults)
 
 
@@ -323,7 +324,7 @@ async def test_control_message_dispatches_get_export_limit():
         except asyncio.CancelledError:
             pass
 
-    mock_get.assert_awaited_once()
+    assert mock_get.await_count == 2  # once at startup, once for the command
     mock_pub.assert_awaited_once()
     topic, payload = mock_pub.call_args[0]
     assert topic == sec.grid_export_limit_topic

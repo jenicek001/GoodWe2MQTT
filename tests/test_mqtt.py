@@ -3,11 +3,12 @@ import asyncio
 import json
 from unittest.mock import patch, MagicMock, AsyncMock
 import goodwe2mqtt
+from conftest import suppress_ensure_future
 
 @pytest.mark.asyncio
 async def test_send_mqtt_response():
     """Test sending an MQTT response."""
-    with patch("asyncio.ensure_future"):
+    with patch("asyncio.ensure_future", side_effect=suppress_ensure_future):
         gw = goodwe2mqtt.Goodwe_MQTT(
             serial_number="TEST_SN",
             ip_address="1.2.3.4",
@@ -43,7 +44,7 @@ async def test_send_mqtt_response():
 @pytest.mark.asyncio
 async def test_mqtt_client_task_subscription():
     """Test that mqtt_client_task subscribes to the correct topic."""
-    with patch("asyncio.ensure_future"):
+    with patch("asyncio.ensure_future", side_effect=suppress_ensure_future):
         gw = goodwe2mqtt.Goodwe_MQTT(
             serial_number="TEST_SN",
             ip_address="1.2.3.4",
@@ -88,7 +89,7 @@ async def test_mqtt_client_task_subscription():
 @pytest.mark.asyncio
 async def test_mqtt_client_task_process_message():
     """Test that mqtt_client_task processes an incoming message."""
-    with patch("asyncio.ensure_future"):
+    with patch("asyncio.ensure_future", side_effect=suppress_ensure_future):
         gw = goodwe2mqtt.Goodwe_MQTT(
             serial_number="TEST_SN",
             ip_address="1.2.3.4",

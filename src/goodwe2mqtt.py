@@ -901,6 +901,20 @@ class SEC1000S_MQTT:
                 ) as client:
                     log.info(f"sec1000s mqtt_client_task {self.name} connected")
                     await client.subscribe(self.control_topic)
+                    try:
+                        startup_data = await sec1000s_protocol.get_grid_export_limit(
+                            self.host, self.port, self.timeout
+                        )
+                        log.info(
+                            f"sec1000s mqtt_client_task {self.name} startup grid_export_limit: "
+                            f"{startup_data.get('grid_export_limit_watts')}W "
+                            f"(total_capacity={startup_data.get('total_capacity_watts')}W, "
+                            f"control_mode={startup_data.get('control_mode')})"
+                        )
+                    except Exception as e:
+                        log.error(
+                            f"sec1000s mqtt_client_task {self.name} startup read failed: {e}"
+                        )
                     async for message in client.messages:
                         payload = message.payload
                         if isinstance(payload, (bytes, bytearray)):
@@ -1166,7 +1180,7 @@ async def main(config: Dict[str, Any]) -> None:
     tasks += [sec.mqtt_task for sec in sec1000s_devices]
     tasks += [sec.heartbeat_task_ref for sec in sec1000s_devices]
     tasks += [sec.telemetry_task_ref for sec in sec1000s_devices]
-    tasks += [sec.export_limit_task_ref for sec in sec1000s_devices]
+    tasks += [sec.grid_export_limit_task_ref for sec in sec1000s_devices]
     await asyncio.gather(*tasks)
 
 def read_config(file_path: str) -> Dict[str, Any]:

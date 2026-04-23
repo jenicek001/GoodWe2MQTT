@@ -2,13 +2,14 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime
 import goodwe2mqtt
+from conftest import suppress_ensure_future
 
 @pytest.mark.asyncio
 async def test_connect_inverter():
     """Test connecting to the inverter."""
     # Mock the goodwe.connect function
     with patch("goodwe.connect", new_callable=AsyncMock) as mock_connect, \
-         patch("asyncio.ensure_future"):
+         patch("asyncio.ensure_future", side_effect=suppress_ensure_future):
         mock_inverter = MagicMock()
         mock_connect.return_value = mock_inverter
         
@@ -38,7 +39,7 @@ async def test_connect_inverter():
 @pytest.mark.asyncio
 async def test_read_runtime_data_success():
     """Test successful reading of runtime data."""
-    with patch("asyncio.ensure_future"):
+    with patch("asyncio.ensure_future", side_effect=suppress_ensure_future):
         gw = goodwe2mqtt.Goodwe_MQTT(
             serial_number="TEST_SN",
             ip_address="1.2.3.4",
@@ -74,7 +75,7 @@ async def test_read_runtime_data_success():
 async def test_read_runtime_data_failure():
     """Test failure when reading runtime data."""
     import goodwe.exceptions
-    with patch("asyncio.ensure_future"):
+    with patch("asyncio.ensure_future", side_effect=suppress_ensure_future):
         gw = goodwe2mqtt.Goodwe_MQTT(
             serial_number="TEST_SN",
             ip_address="1.2.3.4",
@@ -105,7 +106,7 @@ async def test_read_runtime_data_failure():
 async def test_get_operation_mode():
 
     """Test getting operation mode."""
-    with patch("asyncio.ensure_future"):
+    with patch("asyncio.ensure_future", side_effect=suppress_ensure_future):
         gw = goodwe2mqtt.Goodwe_MQTT(
             serial_number="TEST_SN",
             ip_address="1.2.3.4",
