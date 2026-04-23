@@ -99,12 +99,30 @@ async def test_handle_set_message_integer_payload():
 
     with patch.object(gw, "write_setting", new_callable=AsyncMock, return_value=True) as mock_write, \
          patch.object(gw, "send_mqtt_response", new_callable=AsyncMock) as mock_pub:
-        await gw.handle_set_message("grid_export_limit", "5000")
+        await gw.handle_set_message("grid_export_limit_watts", "5000")
 
     mock_write.assert_awaited_once_with("grid_export_limit", 5000)
     mock_pub.assert_awaited_once_with(
-        "goodwe2mqtt/TEST_SN/state/grid_export_limit",
-        {"grid_export_limit": 5000},
+        "goodwe2mqtt/TEST_SN/state/grid_export_limit_watts",
+        {"grid_export_limit_watts": 5000},
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_set_message_battery_charge_current_amps_alias():
+    """handle_set_message should translate battery_charge_current_amps → battery_charge_current for inverter."""
+    gw = make_gw()
+    gw.inverter = AsyncMock()
+    gw.inverter.read_setting = AsyncMock(return_value=10)
+
+    with patch.object(gw, "write_setting", new_callable=AsyncMock, return_value=True) as mock_write, \
+         patch.object(gw, "send_mqtt_response", new_callable=AsyncMock) as mock_pub:
+        await gw.handle_set_message("battery_charge_current_amps", "10")
+
+    mock_write.assert_awaited_once_with("battery_charge_current", 10)
+    mock_pub.assert_awaited_once_with(
+        "goodwe2mqtt/TEST_SN/state/battery_charge_current_amps",
+        {"battery_charge_current_amps": 10},
     )
 
 
@@ -156,7 +174,7 @@ async def test_handle_set_message_write_failure_no_publish():
 
     with patch.object(gw, "write_setting", new_callable=AsyncMock, return_value=False), \
          patch.object(gw, "send_mqtt_response", new_callable=AsyncMock) as mock_pub:
-        await gw.handle_set_message("battery_charge_current", "10")
+        await gw.handle_set_message("battery_charge_current_amps", "10")
 
     mock_pub.assert_not_awaited()
 
@@ -204,7 +222,7 @@ async def test_mqtt_client_task_routes_set_message():
 
     mock_message = MagicMock()
     mock_message.topic = MagicMock()
-    mock_message.topic.__str__ = MagicMock(return_value="goodwe2mqtt/TEST_SN/set/grid_export_limit")
+    mock_message.topic.__str__ = MagicMock(return_value="goodwe2mqtt/TEST_SN/set/grid_export_limit_watts")
     mock_message.payload = b"5000"
 
     mock_messages = MagicMock()
@@ -220,7 +238,7 @@ async def test_mqtt_client_task_routes_set_message():
         except asyncio.CancelledError:
             pass
 
-    mock_handle.assert_awaited_once_with("grid_export_limit", "5000")
+    mock_handle.assert_awaited_once_with("grid_export_limit_watts", "5000")
 
 
 # ---------------------------------------------------------------------------
@@ -238,8 +256,8 @@ async def test_publish_ha_discovery_publishes_three_entities():
     assert mock_pub.await_count == 3
     topics = [c.args[0] for c in mock_pub.call_args_list]
     assert "homeassistant/select/TEST_SN_work_mode/config" in topics
-    assert "homeassistant/number/TEST_SN_battery_charge_current/config" in topics
-    assert "homeassistant/number/TEST_SN_grid_export_limit/config" in topics
+    assert "homeassistant/number/TEST_SN_battery_charge_current_amps/config" in topics
+    assert "homeassistant/number/TEST_SN_grid_export_limit_watts/config" in topics
 
 
 @pytest.mark.asyncio
@@ -287,7 +305,7 @@ async def test_publish_ha_discovery_battery_charge_current_range():
 
     bcc_call = next(
         c for c in mock_pub.call_args_list
-        if "battery_charge_current" in c.args[0]
+        if "battery_charge_current_amps" in c.args[0]
     )
     payload = bcc_call.args[1]
     assert payload["min"] == 0

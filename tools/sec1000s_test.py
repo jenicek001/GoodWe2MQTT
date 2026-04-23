@@ -86,9 +86,9 @@ def get_export_limit() -> dict:
 
     Response layout (rx_payload offsets):
       [5]       export_limit_control_mode  (0=off, 1=DRED, 2=RCR, 3=VALUE)
-      [6:10]    total_capacity             (int32 big-endian, mW → kW)
+      [6:10]    total_capacity             (int32 big-endian, W → kW)
       [10:14]   ratio_ct                   (int32 big-endian)
-      [14:18]   export_limit               (int32 big-endian, mW → kW)
+      [14:18]   export_limit               (int32 big-endian, W → kW)
     """
     payload = b'\x00\x05\x01\x01\x43\x00\x45'
     rx = _tx_rx(payload, expected_response_size=18)

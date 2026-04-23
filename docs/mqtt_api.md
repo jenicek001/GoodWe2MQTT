@@ -60,9 +60,9 @@ By default, `<topic_prefix>` is `goodwe2mqtt`.
 - **Set General Operation Mode:**
   `{"set_general_operation_mode": 1}`
 - **Set Eco Discharge (Battery to Grid):**
-  `{"set_eco_discharge": 50}` (Value in % power)
+  `{"set_eco_discharge_percent": 50}` (Value in % of rated power, 0–100)
 - **Set Eco Charge (Grid to Battery):**
-  `{"set_eco_charge": 50, "target_battery_soc": 80}` (Power % and Target SoC %)
+  `{"set_eco_charge_percent": 50, "target_battery_soc_percent": 80}` (Power % and Target SoC %)
 
 ---
 
@@ -80,8 +80,8 @@ Supported settings:
 | `setting_id` | Description | Payload type | Valid values |
 |---|---|---|---|
 | `work_mode` | Operation mode | string or integer | `"General mode"` (0), `"Off grid mode"` (1), `"Backup mode"` (2), `"Eco mode"` (4) |
-| `battery_charge_current` | Max battery charge current | integer | 0 – 25 (A) |
-| `grid_export_limit` | Grid export power limit | integer | 0 – 10000 (W) |
+| `battery_charge_current_amps` | Max battery charge current | integer | 0 – 25 (A) |
+| `grid_export_limit_watts` | Grid export power limit | integer | 0 – 10000 (W) |
 
 **Examples:**
 
@@ -90,17 +90,17 @@ Supported settings:
 mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/work_mode -m "Eco mode"
 
 # Set grid export limit to 5000 W
-mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/grid_export_limit -m "5000"
+mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/grid_export_limit_watts -m "5000"
 
 # Set battery charge current to 10 A
-mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/battery_charge_current -m "10"
+mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/battery_charge_current_amps -m "10"
 ```
 
 The state topic payload is a JSON object:
 ```json
 {"work_mode": 4}
-{"grid_export_limit": 5000}
-{"battery_charge_current": 10}
+{"grid_export_limit_watts": 5000}
+{"battery_charge_current_amps": 10}
 ```
 
 ---
@@ -113,5 +113,5 @@ entities appear automatically in Home Assistant.
 | Entity | HA Component | Discovery topic |
 |---|---|---|
 | Operation Mode | `select` | `homeassistant/select/<serial>_work_mode/config` |
-| Battery Charge Current | `number` | `homeassistant/number/<serial>_battery_charge_current/config` |
-| Grid Export Limit | `number` | `homeassistant/number/<serial>_grid_export_limit/config` |
+| Battery Charge Current | `number` | `homeassistant/number/<serial>_battery_charge_current_amps/config` |
+| Grid Export Limit | `number` | `homeassistant/number/<serial>_grid_export_limit_watts/config` |
