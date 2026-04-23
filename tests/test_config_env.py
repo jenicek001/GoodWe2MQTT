@@ -24,3 +24,14 @@ def test_read_config_env_nested_override():
         config = goodwe2mqtt.read_config("dummy.yaml")
         assert config["mqtt"]["broker_port"] == 8883
         assert config["goodwe"]["inverters"][1]["serial_number"] == "SN456"
+
+
+def test_read_config_env_inverter_family_override():
+    """Test overriding inverter family via environment variable."""
+    with patch.dict(os.environ, {
+        "G2M_GOODWE_INVERTERS_0_SERIAL_NUMBER": "SN123",
+        "G2M_GOODWE_INVERTERS_0_IP_ADDRESS": "192.168.1.100",
+        "G2M_GOODWE_INVERTERS_0_FAMILY": "ES",
+    }, clear=False):
+        config = goodwe2mqtt.read_config("dummy.yaml")
+        assert config["goodwe"]["inverters"][0]["family"] == "ES"

@@ -95,6 +95,7 @@ Configuration is provided via environment variables using the `G2M_<SECTION>_<KE
 For lists like inverters, use the index:
 - `G2M_GOODWE_INVERTERS_0_IP_ADDRESS`
 - `G2M_GOODWE_INVERTERS_0_SERIAL_NUMBER`
+- `G2M_GOODWE_INVERTERS_0_FAMILY` (optional, default: `ET`)
 
 ## Security
 

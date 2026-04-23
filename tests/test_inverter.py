@@ -35,6 +35,37 @@ async def test_connect_inverter():
         assert result == mock_inverter
         mock_connect.assert_called_once_with(host="1.2.3.4", family='ET')
 
+
+@pytest.mark.asyncio
+async def test_connect_inverter_uses_configured_family():
+    """Test connecting to inverter with explicitly configured family."""
+    with patch("goodwe.connect", new_callable=AsyncMock) as mock_connect, \
+         patch("asyncio.ensure_future"):
+        mock_inverter = MagicMock()
+        mock_connect.return_value = mock_inverter
+
+        gw = goodwe2mqtt.Goodwe_MQTT(
+            serial_number="TEST_SN",
+            ip_address="1.2.3.4",
+            mqtt_broker_ip="127.0.0.1",
+            mqtt_broker_port=1883,
+            mqtt_username="",
+            mqtt_password="",
+            mqtt_topic_prefix="test",
+            mqtt_control_topic_postfix="control",
+            mqtt_runtime_data_topic_postfix="data",
+            mqtt_runtime_data_interval_seconds=5,
+            mqtt_fast_runtime_data_topic_postfix="fast",
+            mqtt_fast_runtime_data_interval_seconds=1,
+            mqtt_grid_export_limit_topic_postfix="limit",
+            inverter_family="ES",
+        )
+
+        result = await gw.connect_inverter()
+
+        assert result == mock_inverter
+        mock_connect.assert_called_once_with(host="1.2.3.4", family='ES')
+
 @pytest.mark.asyncio
 async def test_read_runtime_data_success():
     """Test successful reading of runtime data."""
@@ -158,4 +189,3 @@ async def test_set_grid_export_limit_rejects_zero():
     await gw.set_grid_export_limit(0)
 
     gw.inverter.set_grid_export_limit.assert_not_awaited()
-

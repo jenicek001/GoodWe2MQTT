@@ -104,7 +104,7 @@ def override_config_from_env(config: Dict[str, Any], prefix: str = "G2M") -> Non
 def override_inverters_from_env(config: Dict[str, Any], prefix: str = "G2M") -> None:
     """Overrides inverter list from indexed environment variables."""
     inverter_pattern = re.compile(
-        rf"^{re.escape(prefix)}_GOODWE_INVERTERS_(\d+)_(SERIAL_NUMBER|IP_ADDRESS)$"
+        rf"^{re.escape(prefix)}_GOODWE_INVERTERS_(\d+)_(SERIAL_NUMBER|IP_ADDRESS|FAMILY)$"
     )
     inverters = config["goodwe"]["inverters"]
 
@@ -117,7 +117,7 @@ def override_inverters_from_env(config: Dict[str, Any], prefix: str = "G2M") -> 
         field_name = match.group(2).lower()
 
         while len(inverters) <= index:
-            inverters.append({"serial_number": "", "ip_address": ""})
+            inverters.append({"serial_number": "", "ip_address": "", "family": "ET"})
 
         inverters[index][field_name] = env_val
 
@@ -168,7 +168,8 @@ class Goodwe_MQTT:
         mqtt_runtime_data_interval_seconds: int,
         mqtt_fast_runtime_data_topic_postfix: str,
         mqtt_fast_runtime_data_interval_seconds: int,
-        mqtt_grid_export_limit_topic_postfix: str
+        mqtt_grid_export_limit_topic_postfix: str,
+        inverter_family: str = "ET"
     ) -> None:
         """Initializes the Goodwe_MQTT instance.
 
@@ -186,9 +187,11 @@ class Goodwe_MQTT:
             mqtt_fast_runtime_data_topic_postfix: Postfix for fast runtime data.
             mqtt_fast_runtime_data_interval_seconds: Polling interval for fast data.
             mqtt_grid_export_limit_topic_postfix: Postfix for export limit topic.
+            inverter_family: Inverter family passed to the goodwe library.
         """
         self.serial_number = serial_number
         self.ip_address = ip_address
+        self.inverter_family = inverter_family
 
         self.mqtt_broker_ip = mqtt_broker_ip
         self.mqtt_broker_port = mqtt_broker_port
@@ -225,6 +228,7 @@ class Goodwe_MQTT:
     def __str__(self) -> str:
         return (f'{self.serial_number}, {self.ip_address}, {self.grid_export_limit}, '
                 f'{self.mqtt_broker_ip}, {self.mqtt_broker_port}, {self.mqtt_username}, '
+                f'{self.inverter_family}, '
                 f'{self.mqtt_control_topic}, {self.mqtt_runtime_data_topic}, '
                 f'{self.grid_export_limit_topic}')
 
@@ -257,7 +261,7 @@ class Goodwe_MQTT:
         log.info(f'Connecting to inverter {self.serial_number} at {self.ip_address}')
         start_time = time.time()
         try:
-            self.inverter = await goodwe.connect(host=self.ip_address, family='ET')
+            self.inverter = await goodwe.connect(host=self.ip_address, family=self.inverter_family)
             connection_time = time.time() - start_time
             log.info(f'Connected to inverter {self.serial_number} in {connection_time} seconds')
             return self.inverter
@@ -775,7 +779,8 @@ async def main(config: Dict[str, Any]) -> None:
             mqtt_runtime_data_interval_seconds=config["mqtt"]["runtime_data_interval_seconds"],
             mqtt_fast_runtime_data_topic_postfix=config["mqtt"]["fast_runtime_data_topic_postfix"],
             mqtt_fast_runtime_data_interval_seconds=config["mqtt"]["fast_runtime_data_interval_seconds"],
-            mqtt_grid_export_limit_topic_postfix=config["mqtt"]["grid_export_limit_topic_postfix"]
+            mqtt_grid_export_limit_topic_postfix=config["mqtt"]["grid_export_limit_topic_postfix"],
+            inverter_family=inverter_config.get("family", "ET")
         )
 
         await inv.connect_inverter()
