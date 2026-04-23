@@ -746,7 +746,10 @@ class Goodwe_MQTT:
 
                     while True:
                         now = datetime.now()
-                        next_fast_runtime_data_time = now + self.mqtt_fast_runtime_data_interval_seconds
+                        if self.mqtt_fast_runtime_data_interval_seconds.total_seconds() > 0:
+                            next_fast_runtime_data_time = now + self.mqtt_fast_runtime_data_interval_seconds
+                        else:
+                            next_fast_runtime_data_time = now + self.mqtt_runtime_data_interval_seconds
                         
                         log.debug(f'main_loop {self.serial_number} reading runtime data')
                         data = await self.read_runtime_data()
@@ -755,9 +758,10 @@ class Goodwe_MQTT:
                             await asyncio.sleep(5)
                             continue
 
-                        # Publish fast runtime data
-                        await client.publish(self.mqtt_fast_runtime_data_topic, payload=json.dumps(data))
-                        
+                        # Publish fast runtime data (disabled when interval is 0)
+                        if self.mqtt_fast_runtime_data_interval_seconds.total_seconds() > 0:
+                            await client.publish(self.mqtt_fast_runtime_data_topic, payload=json.dumps(data))
+
                         # Publish regular runtime data if interval reached
                         if now >= next_runtime_data_time:
                             next_runtime_data_time = now + self.mqtt_runtime_data_interval_seconds
