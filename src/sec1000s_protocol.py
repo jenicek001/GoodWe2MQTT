@@ -164,6 +164,7 @@ async def get_grid_export_limit(
     ==========================  =========  ========================================
     control_mode                int        0=off, 1=DRED, 2=RCR, 3=VALUE
     total_capacity_watts        int (W)    Installed inverter capacity
+    ratio_ct_raw                int        Raw CT ratio value stored on device
     grid_export_limit_watts     int (W)    Active grid export limit
     ==========================  =========  ========================================
     """
@@ -173,6 +174,7 @@ async def get_grid_export_limit(
     return {
         "control_mode": int(rx[5]),
         "total_capacity_watts": int(struct.unpack(">i", rx[6:10])[0]),
+        "ratio_ct_raw": int(struct.unpack(">i", rx[10:14])[0]),
         "grid_export_limit_watts": int(struct.unpack(">i", rx[14:18])[0]),
     }
 

@@ -41,6 +41,7 @@ def make_sec(**kwargs) -> goodwe2mqtt.SEC1000S_MQTT:
 _EXPORT_LIMIT_RESPONSE = {
     "control_mode": 3,
     "total_capacity_watts": 10000,
+    "ratio_ct_raw": 0,
     "grid_export_limit_watts": 3000,
 }
 

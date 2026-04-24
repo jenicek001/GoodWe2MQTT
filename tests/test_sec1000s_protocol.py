@@ -130,6 +130,7 @@ async def test_get_export_limit_parses_response():
 
     assert result["control_mode"] == 3
     assert result["total_capacity_watts"] == 10000
+    assert result["ratio_ct_raw"] == 0
     assert result["grid_export_limit_watts"] == 3000
 
 
