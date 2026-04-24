@@ -15,7 +15,7 @@ from conftest import suppress_ensure_future
 def make_sec(**kwargs) -> goodwe2mqtt.SEC1000S_MQTT:
     """Create a SEC1000S_MQTT instance with asyncio tasks suppressed."""
     defaults = dict(
-        name="test_sec",
+        serial_number="test_sec",
         host="192.168.1.100",
         port=1234,
         timeout=10.0,
@@ -57,7 +57,7 @@ def test_init_effective_ceiling():
 
 def test_init_topic_structure():
     """MQTT topics should follow goodwe2mqtt/sec1000s/<name>/ pattern."""
-    sec = make_sec(name="home", mqtt_topic_prefix="goodwe2mqtt")
+    sec = make_sec(serial_number="home", mqtt_topic_prefix="goodwe2mqtt")
     assert sec.telemetry_topic == "goodwe2mqtt/sec1000s/home/telemetry"
     assert sec.grid_export_limit_topic == "goodwe2mqtt/sec1000s/home/grid_export_limit"
     assert sec.status_topic == "goodwe2mqtt/sec1000s/home/status"
@@ -382,7 +382,7 @@ async def test_control_message_dispatches_get_telemetry():
 @pytest.mark.asyncio
 async def test_publish_ha_discovery_structure():
     """publish_ha_discovery should publish to correct HA discovery topic."""
-    sec = make_sec(name="home")
+    sec = make_sec(serial_number="home")
 
     with patch.object(sec, "send_mqtt_response", new_callable=AsyncMock) as mock_pub:
         await sec.publish_ha_discovery()
