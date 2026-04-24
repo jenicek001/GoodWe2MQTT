@@ -135,3 +135,46 @@ async def test_get_operation_mode():
         mock_send.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_get_grid_export_limit_negative_value():
+    """get_grid_export_limit should reinterpret unsigned 16-bit as signed (e.g. 65486 → -50)."""
+    with patch("asyncio.ensure_future", side_effect=suppress_ensure_future):
+        gw = goodwe2mqtt.Goodwe_MQTT(
+            serial_number="TEST_SN",
+            ip_address="1.2.3.4",
+            mqtt_broker_ip="127.0.0.1",
+            mqtt_broker_port=1883,
+            mqtt_username="",
+            mqtt_password="",
+            mqtt_topic_prefix="test",
+            mqtt_control_topic_postfix="control",
+            mqtt_runtime_data_topic_postfix="data",
+            mqtt_runtime_data_interval_seconds=5,
+            mqtt_fast_runtime_data_topic_postfix="fast",
+            mqtt_fast_runtime_data_interval_seconds=1,
+            mqtt_grid_export_limit_topic_postfix="limit"
+        )
+
+    mock_inverter = AsyncMock()
+    gw.inverter = mock_inverter
+
+    # 65486 == 0xFFCE == -50 as signed int16
+    mock_inverter.get_grid_export_limit.return_value = 65486
+    result = await gw.get_grid_export_limit()
+    assert result == -50
+
+    # Positive values should pass through unchanged
+    mock_inverter.get_grid_export_limit.return_value = 3000
+    result = await gw.get_grid_export_limit()
+    assert result == 3000
+
+    # Zero boundary: 32767 (0x7FFF) is max positive signed int16
+    mock_inverter.get_grid_export_limit.return_value = 32767
+    result = await gw.get_grid_export_limit()
+    assert result == 32767
+
+    # 32768 (0x8000) is -32768 as signed int16
+    mock_inverter.get_grid_export_limit.return_value = 32768
+    result = await gw.get_grid_export_limit()
+    assert result == -32768
+

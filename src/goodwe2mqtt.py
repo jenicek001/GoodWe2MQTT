@@ -285,10 +285,17 @@ class Goodwe_MQTT:
     }
 
     def __str__(self) -> str:
-        return (f'{self.serial_number}, {self.ip_address}, {self.grid_export_limit}, '
-                f'{self.mqtt_broker_ip}, {self.mqtt_broker_port}, {self.mqtt_username}, '
-                f'{self.mqtt_control_topic}, {self.mqtt_runtime_data_topic}, '
-                f'{self.grid_export_limit_topic}')
+        interval_rt = int(self.mqtt_runtime_data_interval_seconds.total_seconds())
+        interval_fast = int(self.mqtt_fast_runtime_data_interval_seconds.total_seconds())
+        return (
+            f"Goodwe_MQTT {self.serial_number} init\n"
+            f"  inverter:  ip={self.ip_address}\n"
+            f"  broker:    ip={self.mqtt_broker_ip} port={self.mqtt_broker_port} user={self.mqtt_username}\n"
+            f"  intervals: runtime_data={interval_rt}s  fast_runtime_data={interval_fast}s\n"
+            f"  topics:    control={self.mqtt_control_topic}\n"
+            f"             runtime_data={self.mqtt_runtime_data_topic}\n"
+            f"             grid_export_limit={self.grid_export_limit_topic}"
+        )
 
     async def heartbeat_task(self) -> None:
         """Periodically publishes an 'online' status to the MQTT broker."""
@@ -610,7 +617,11 @@ class Goodwe_MQTT:
             The numeric export limit or None if read fails.
         """
         try:
-            self.grid_export_limit = await self.inverter.get_grid_export_limit()
+            raw = await self.inverter.get_grid_export_limit()
+            # The goodwe library returns an unsigned 16-bit register value; reinterpret as signed.
+            if isinstance(raw, int) and raw >= 0x8000:
+                raw = raw - 0x10000
+            self.grid_export_limit = raw
             log.debug(f'get_grid_export_limit {self.serial_number}: {self.grid_export_limit}')
             return self.grid_export_limit
         except Exception as e:
@@ -822,6 +833,7 @@ class SEC1000S_MQTT:
         self.mqtt_broker_port = mqtt_broker_port
         self.mqtt_username = mqtt_username
         self.mqtt_password = mqtt_password
+        self.contractual_safety_margin = contractual_safety_margin
 
         base = f"{mqtt_topic_prefix}/sec1000s/{serial_number}"
         self.mqtt_topic_base = base
@@ -830,15 +842,29 @@ class SEC1000S_MQTT:
         self.status_topic = f"{base}/status"
         self.control_topic = f"{base}/control"
 
-        log.info(
-            f"SEC1000S_MQTT {serial_number} host={host}:{port} "
-            f"ceiling={self.effective_ceiling_w}W floor={min_limit_w}W"
-        )
+        log.info(str(self))
 
         self.mqtt_task = asyncio.ensure_future(self.mqtt_client_task())
         self.heartbeat_task_ref = asyncio.ensure_future(self.heartbeat_task())
         self.telemetry_task_ref = asyncio.ensure_future(self.telemetry_loop())
         self.grid_export_limit_task_ref = asyncio.ensure_future(self.grid_export_limit_loop())
+
+    def __str__(self) -> str:
+        margin_pct = int(self.contractual_safety_margin * 100)
+        return (
+            f"SEC1000S_MQTT {self.serial_number} init\n"
+            f"  device:    host={self.host} port={self.port} timeout={self.timeout}s\n"
+            f"  limits:    floor={self.min_limit_w}W  ceiling={self.effective_ceiling_w}W"
+            f" (contractual={self.contractual_limit_w}W margin={margin_pct}%)\n"
+            f"  broker:    ip={self.mqtt_broker_ip} port={self.mqtt_broker_port} user={self.mqtt_username}\n"
+            f"  intervals: telemetry={self.telemetry_interval_seconds}s"
+            f"  grid_export_limit={self.grid_export_limit_interval_seconds}s\n"
+            f"  settings:  scan_three_phases={str(self.scan_three_phases).lower()}"
+            f" retries={self.set_verify_retries} verify_delay={self.set_verify_delay_seconds}s\n"
+            f"  topics:    control={self.control_topic}\n"
+            f"             telemetry={self.telemetry_topic}\n"
+            f"             grid_export_limit={self.grid_export_limit_topic}"
+        )
 
     async def heartbeat_task(self) -> None:
         """Periodically publishes 'online' status to the MQTT broker."""
