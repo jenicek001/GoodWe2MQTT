@@ -915,7 +915,8 @@ class SEC1000S_MQTT:
                             f"sec1000s mqtt_client_task {self.serial_number} startup grid_export_limit: "
                             f"{startup_data.get('grid_export_limit_watts')}W "
                             f"(total_capacity={startup_data.get('total_capacity_watts')}W, "
-                            f"control_mode={startup_data.get('control_mode')})"
+                            f"control_mode={startup_data.get('control_mode')}, "
+                            f"ratio_ct_raw={startup_data.get('ratio_ct_raw')})"
                         )
                     except Exception as e:
                         log.error(
