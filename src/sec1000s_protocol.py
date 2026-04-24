@@ -61,7 +61,13 @@ async def _tx_rx(
         writer.write(payload)
         await writer.drain()
 
-        header = await asyncio.wait_for(reader.readexactly(7), timeout=timeout)
+        try:
+            header = await asyncio.wait_for(reader.readexactly(7), timeout=timeout)
+        except asyncio.IncompleteReadError as e:
+            raise ValueError(
+                f"Command not supported or rejected: device closed after "
+                f"{len(e.partial)} bytes (expected 7-byte header)"
+            ) from e
         body_size = header[6]
         if body_size != expected_response_size:
             raise ValueError(

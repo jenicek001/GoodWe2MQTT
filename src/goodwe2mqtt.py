@@ -870,7 +870,7 @@ class SEC1000S_MQTT:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                log.error(f"sec1000s telemetry_loop {self.name} error: {e}")
+                log.debug(f"sec1000s telemetry_loop {self.name} error: {e}")
             try:
                 await asyncio.sleep(self.telemetry_interval_seconds)
             except asyncio.CancelledError:
