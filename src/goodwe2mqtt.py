@@ -1138,6 +1138,7 @@ class SEC1000S_MQTT:
             "unique_id": f"sec1000s_{name}_grid_export_limit_watts",
             "name": "Grid Export Limit",
             "command_topic": f"{base}/control",
+            "command_template": '{"set_grid_export_limit_watts": {{ value }}}',
             "state_topic": f"{base}/grid_export_limit",
             "value_template": "{{ value_json.grid_export_limit_watts }}",
             "unit_of_measurement": "W",
