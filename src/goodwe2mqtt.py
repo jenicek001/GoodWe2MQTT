@@ -1014,7 +1014,7 @@ class SEC1000S_MQTT:
           1. Reject if ``limit_w < min_limit_w`` (safety floor).
           2. Clamp silently to ``effective_ceiling_w`` if above ceiling.
           3. Read current total_capacity from device.
-          4. Call ``enable_value_mode`` then ``set_grid_export_limit``.
+          4. Call ``set_grid_export_limit`` then ``enable_value_mode`` to activate.
           5. Readback after delay; retry up to ``set_verify_retries`` times.
         """
         if limit_w < self.min_limit_w:
