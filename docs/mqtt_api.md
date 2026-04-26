@@ -26,7 +26,7 @@ By default, `<topic_prefix>` is `goodwe2mqtt`.
 - **Topic:** `goodwe2mqtt/<serial>/grid_export_limit`
 - **Payload:** JSON object with current export limit.
   ```json
-  {"grid_export_limit": 5000, "serial_number": "...", "last_seen": "..."}
+  {"grid_export_limit_watts": 5000, "serial_number": "...", "last_seen": "..."}
   ```
 
 ### 4. Operation Mode
@@ -52,9 +52,9 @@ By default, `<topic_prefix>` is `goodwe2mqtt`.
 #### Actions:
 
 - **Get Grid Export Limit:**
-  `{"get_grid_export_limit": 1}`
+  `{"get_grid_export_limit_watts": 1}`
 - **Set Grid Export Limit:**
-  `{"set_grid_export_limit": 3000}` (Value in Watts)
+  `{"set_grid_export_limit_watts": 3000}` (Value in Watts)
 - **Get Operation Mode:**
   `{"get_operation_mode": 1}`
 - **Set General Operation Mode:**
