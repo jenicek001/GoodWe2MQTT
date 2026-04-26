@@ -2,6 +2,7 @@ import pytest
 import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 from goodwe2mqtt import Goodwe_MQTT
+from conftest import suppress_ensure_future
 
 @pytest.fixture
 def mock_config():
@@ -94,7 +95,7 @@ async def test_heartbeat_reporting(mock_config):
     inv_config = mock_config["goodwe"]["inverters"][0]
     mqtt_config = mock_config["mqtt"]
     
-    with patch("asyncio.ensure_future"):
+    with patch("asyncio.ensure_future", side_effect=suppress_ensure_future):
         gw = Goodwe_MQTT(
             inv_config["serial_number"], inv_config["ip_address"],
             mqtt_config["broker_ip"], mqtt_config["broker_port"],

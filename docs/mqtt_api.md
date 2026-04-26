@@ -26,7 +26,7 @@ By default, `<topic_prefix>` is `goodwe2mqtt`.
 - **Topic:** `goodwe2mqtt/<serial>/grid_export_limit`
 - **Payload:** JSON object with current export limit.
   ```json
-  {"grid_export_limit": 5000, "serial_number": "...", "last_seen": "..."}
+  {"grid_export_limit_watts": 5000, "serial_number": "...", "last_seen": "..."}
   ```
 
 ### 4. Operation Mode
@@ -52,17 +52,17 @@ By default, `<topic_prefix>` is `goodwe2mqtt`.
 #### Actions:
 
 - **Get Grid Export Limit:**
-  `{"get_grid_export_limit": 1}`
+  `{"get_grid_export_limit_watts": 1}`
 - **Set Grid Export Limit:**
-  `{"set_grid_export_limit": 3000}` (Value in Watts)
+  `{"set_grid_export_limit_watts": 3000}` (Value in Watts)
 - **Get Operation Mode:**
   `{"get_operation_mode": 1}`
 - **Set General Operation Mode:**
   `{"set_general_operation_mode": 1}`
 - **Set Eco Discharge (Battery to Grid):**
-  `{"set_eco_discharge": 50}` (Value in % power)
+  `{"set_eco_discharge_percent": 50}` (Value in % of rated power, 0–100)
 - **Set Eco Charge (Grid to Battery):**
-  `{"set_eco_charge": 50, "target_battery_soc": 80}` (Power % and Target SoC %)
+  `{"set_eco_charge_percent": 50, "target_battery_soc_percent": 80}` (Power % and Target SoC %)
 
 ---
 
@@ -80,8 +80,8 @@ Supported settings:
 | `setting_id` | Description | Payload type | Valid values |
 |---|---|---|---|
 | `work_mode` | Operation mode | string or integer | `"General mode"` (0), `"Off grid mode"` (1), `"Backup mode"` (2), `"Eco mode"` (4) |
-| `battery_charge_current` | Max battery charge current | integer | 0 – 25 (A) |
-| `grid_export_limit` | Grid export power limit | integer | 0 – 10000 (W) |
+| `battery_charge_current_amps` | Max battery charge current | integer | 0 – 25 (A) |
+| `grid_export_limit_watts` | Grid export power limit | integer | 0 – 10000 (W) |
 
 **Examples:**
 
@@ -90,17 +90,17 @@ Supported settings:
 mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/work_mode -m "Eco mode"
 
 # Set grid export limit to 5000 W
-mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/grid_export_limit -m "5000"
+mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/grid_export_limit_watts -m "5000"
 
 # Set battery charge current to 10 A
-mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/battery_charge_current -m "10"
+mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/battery_charge_current_amps -m "10"
 ```
 
 The state topic payload is a JSON object:
 ```json
 {"work_mode": 4}
-{"grid_export_limit": 5000}
-{"battery_charge_current": 10}
+{"grid_export_limit_watts": 5000}
+{"battery_charge_current_amps": 10}
 ```
 
 ---
@@ -113,5 +113,89 @@ entities appear automatically in Home Assistant.
 | Entity | HA Component | Discovery topic |
 |---|---|---|
 | Operation Mode | `select` | `homeassistant/select/<serial>_work_mode/config` |
-| Battery Charge Current | `number` | `homeassistant/number/<serial>_battery_charge_current/config` |
-| Grid Export Limit | `number` | `homeassistant/number/<serial>_grid_export_limit/config` |
+| Battery Charge Current | `number` | `homeassistant/number/<serial>_battery_charge_current_amps/config` |
+| Grid Export Limit | `number` | `homeassistant/number/<serial>_grid_export_limit_watts/config` |
+
+---
+
+## SEC1000S Energy Controller
+
+The SEC1000S uses `goodwe2mqtt/sec1000s/<serial_number>/` as its base topic,
+where `<serial_number>` is set via `G2M_SEC1000S_<N>_SERIAL_NUMBER`.
+
+### Read Topics
+
+| Topic | Interval | Payload |
+|---|---|---|
+| `goodwe2mqtt/sec1000s/<serial_number>/grid_export_limit` | `grid_export_limit_interval_seconds` | `{"control_mode": 3, "total_capacity_watts": 14000, "grid_export_limit_watts": 2500, "serial_number": "...", "effective_ceiling_watts": 9000, "last_seen": "..."}` |
+| `goodwe2mqtt/sec1000s/<serial_number>/telemetry` | `telemetry_interval_seconds` | `{"v1": 240.0, ..., "meters_power_watts": 3084, "serial_number": "...", "last_seen": "..."}` |
+| `goodwe2mqtt/sec1000s/<serial_number>/status` | 30 s | `"online"` |
+
+### Control Topic
+
+**Topic:** `goodwe2mqtt/sec1000s/<serial_number>/control`
+
+| Command | Payload |
+|---|---|
+| Set grid export limit | `{"set_grid_export_limit_watts": 1000}` |
+| Get grid export limit | `{"get_grid_export_limit_watts": 1}` |
+
+**Examples:**
+
+```bash
+# Set grid export limit to 1000 W
+mosquitto_pub -h localhost -u mqtt_username -P mqtt_password \
+  -t goodwe2mqtt/sec1000s/99000SEC235L0256/control \
+  -m '{"set_grid_export_limit_watts":1000}'
+
+# Ask the SEC1000S to report the current limit (reply arrives on the grid_export_limit topic)
+mosquitto_pub -h localhost -u mqtt_username -P mqtt_password \
+  -t goodwe2mqtt/sec1000s/99000SEC235L0256/control \
+  -m '{"get_grid_export_limit_watts":1}'
+
+# Listen to the SEC1000S grid export limit topic (verify the limit was accepted)
+mosquitto_sub -h localhost -u mqtt_username -P mqtt_password \
+  -t goodwe2mqtt/sec1000s/99000SEC235L0256/grid_export_limit
+
+# Listen to SEC1000S telemetry (voltage, current, power per phase)
+mosquitto_sub -h localhost -u mqtt_username -P mqtt_password \
+  -t goodwe2mqtt/sec1000s/99000SEC235L0256/telemetry
+
+# Listen to all SEC1000S topics at once
+mosquitto_sub -h localhost -u mqtt_username -P mqtt_password \
+  -t 'goodwe2mqtt/sec1000s/99000SEC235L0256/#'
+```
+
+---
+
+## Useful mosquitto_sub Examples (GoodWe ET Inverters)
+
+Replace `SERIAL` with the inverter serial number (matches `G2M_GOODWE_INVERTERS_<N>_SERIAL_NUMBER`).
+
+```bash
+# Listen to fast runtime data (updated every second by default)
+mosquitto_sub -h localhost -u mqtt_username -P mqtt_password \
+  -t goodwe2mqtt/SERIAL/fast_runtime_data
+
+# Listen to regular runtime data
+mosquitto_sub -h localhost -u mqtt_username -P mqtt_password \
+  -t goodwe2mqtt/SERIAL/runtime_data
+
+# Listen to grid export limit changes on the inverter
+mosquitto_sub -h localhost -u mqtt_username -P mqtt_password \
+  -t goodwe2mqtt/SERIAL/grid_export_limit
+
+# Ask the inverter to report its current grid export limit
+mosquitto_pub -h localhost -u mqtt_username -P mqtt_password \
+  -t goodwe2mqtt/SERIAL/control \
+  -m '{"get_grid_export_limit_watts":1}'
+
+# Set the inverter grid export limit to 5000 W via /set/ topic
+mosquitto_pub -h localhost -u mqtt_username -P mqtt_password \
+  -t goodwe2mqtt/SERIAL/set/grid_export_limit_watts \
+  -m '5000'
+
+# Listen to all topics for one inverter
+mosquitto_sub -h localhost -u mqtt_username -P mqtt_password \
+  -t 'goodwe2mqtt/SERIAL/#'
+```

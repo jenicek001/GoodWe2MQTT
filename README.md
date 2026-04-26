@@ -2,6 +2,8 @@
 Daemon to read runtime data and configure GoodWe Inverters reporting and control via MQTT.
 It is based on GoodWe project https://github.com/marcelblijleven/goodwe
 
+SEC1000S protocol reverse-engineering sourced from https://github.com/jozef-moravcik-homeassistant/GoodWe-SEC1000S
+
 ## Documentation
 - [Docker Deployment Guide](docs/docker.md)
 - [Architecture](docs/architecture.md)

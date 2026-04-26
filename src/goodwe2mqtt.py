@@ -20,6 +20,7 @@ import os
 import re
 from logger import log
 from goodwe.inverter import OperationMode
+import sec1000s_protocol
 
 config_file = ".env"
 
@@ -40,6 +41,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "goodwe": {
         "inverters": []
+    },
+    "sec1000s": {
+        "devices": []
     },
     "logger": {
         "log_file": "goodwe2mqtt.log",
@@ -120,6 +124,60 @@ def override_inverters_from_env(config: Dict[str, Any], prefix: str = "G2M") -> 
             inverters.append({"serial_number": "", "ip_address": ""})
 
         inverters[index][field_name] = env_val
+
+def override_sec1000s_from_env(config: Dict[str, Any], prefix: str = "G2M") -> None:
+    """Overrides SEC1000S device list from indexed environment variables."""
+    sec_pattern = re.compile(
+        rf"^{re.escape(prefix)}_SEC1000S_(\d+)"
+        r"_(HOST|SERIAL_NUMBER|PORT|TIMEOUT|MIN_LIMIT_W|CONTRACTUAL_LIMIT_W"
+        r"|CONTRACTUAL_SAFETY_MARGIN|SCAN_THREE_PHASES"
+        r"|TELEMETRY_INTERVAL_SECONDS|GRID_EXPORT_LIMIT_INTERVAL_SECONDS"
+        r"|SET_VERIFY_RETRIES|SET_VERIFY_DELAY_SECONDS)$"
+    )
+    devices = config["sec1000s"]["devices"]
+
+    _defaults: Dict[str, Any] = {
+        "host": "",
+        "serial_number": "",
+        "port": 1234,
+        "timeout": 10.0,
+        "min_limit_w": 100,
+        "contractual_limit_w": 0,
+        "contractual_safety_margin": 0.10,
+        "scan_three_phases": False,
+        "telemetry_interval_seconds": 5,
+        "grid_export_limit_interval_seconds": 30,
+        "set_verify_retries": 3,
+        "set_verify_delay_seconds": 2.0,
+    }
+
+    for env_key, env_val in os.environ.items():
+        match = sec_pattern.match(env_key)
+        if not match:
+            continue
+
+        index = int(match.group(1))
+        field_name = match.group(2).lower()
+
+        while len(devices) <= index:
+            devices.append(dict(_defaults))
+
+        device = devices[index]
+        default_val = _defaults.get(field_name)
+        if isinstance(default_val, bool):
+            device[field_name] = env_val.lower() in ("true", "1", "yes", "on")
+        elif isinstance(default_val, int):
+            try:
+                device[field_name] = int(env_val)
+            except ValueError:
+                log.warning(f"Invalid integer for {env_key}: {env_val}")
+        elif isinstance(default_val, float):
+            try:
+                device[field_name] = float(env_val)
+            except ValueError:
+                log.warning(f"Invalid float for {env_key}: {env_val}")
+        else:
+            device[field_name] = env_val
 
 def dump_to_json(runtime_data: Dict[str, Any]) -> None:
     """Dumps runtime_data to a JSON file with a timestamped filename.
@@ -220,11 +278,24 @@ class Goodwe_MQTT:
         self.mqtt_task = asyncio.ensure_future(self.mqtt_client_task())
         self.heartbeat_task_ref = asyncio.ensure_future(self.heartbeat_task())
 
+    # Maps MQTT setting names → goodwe library setting IDs
+    _INVERTER_SETTING_ALIAS: Dict[str, str] = {
+        "grid_export_limit_watts": "grid_export_limit",
+        "battery_charge_current_amps": "battery_charge_current",
+    }
+
     def __str__(self) -> str:
-        return (f'{self.serial_number}, {self.ip_address}, {self.grid_export_limit}, '
-                f'{self.mqtt_broker_ip}, {self.mqtt_broker_port}, {self.mqtt_username}, '
-                f'{self.mqtt_control_topic}, {self.mqtt_runtime_data_topic}, '
-                f'{self.grid_export_limit_topic}')
+        interval_rt = int(self.mqtt_runtime_data_interval_seconds.total_seconds())
+        interval_fast = int(self.mqtt_fast_runtime_data_interval_seconds.total_seconds())
+        return (
+            f"Goodwe_MQTT {self.serial_number} init\n"
+            f"  inverter:  ip={self.ip_address}\n"
+            f"  broker:    ip={self.mqtt_broker_ip} port={self.mqtt_broker_port} user={self.mqtt_username}\n"
+            f"  intervals: runtime_data={interval_rt}s  fast_runtime_data={interval_fast}s\n"
+            f"  topics:    control={self.mqtt_control_topic}\n"
+            f"             runtime_data={self.mqtt_runtime_data_topic}\n"
+            f"             grid_export_limit={self.grid_export_limit_topic}"
+        )
 
     async def heartbeat_task(self) -> None:
         """Periodically publishes an 'online' status to the MQTT broker."""
@@ -271,7 +342,7 @@ class Goodwe_MQTT:
             grid_export_limit: The numeric limit to publish.
         """
         grid_export_limit_response = {
-            'grid_export_limit': grid_export_limit,
+            'grid_export_limit_watts': grid_export_limit,
             'serial_number': self.serial_number,
             'last_seen': get_timezone_aware_local_time().isoformat()
         }
@@ -324,17 +395,17 @@ class Goodwe_MQTT:
                             await self.handle_set_message(setting_id, message_payload)
                             continue
 
-                        if 'get_grid_export_limit' in message_payload:
+                        if 'get_grid_export_limit_watts' in message_payload:
                             log.info(f'mqtt_client_task {self.serial_number} Getting export limit')
                             self.grid_export_limit = await self.get_grid_export_limit()
                             if self.grid_export_limit is not None:
                                 log.info(f'mqtt_client_task {self.serial_number} Got export limit: {self.grid_export_limit}')
                                 await self.send_mqtt_export_limit(self.grid_export_limit)
 
-                        elif 'set_grid_export_limit' in message_payload:
+                        elif 'set_grid_export_limit_watts' in message_payload:
                             try:
                                 data = json.loads(message_payload)
-                                self.requested_grid_export_limit = int(data['set_grid_export_limit'])
+                                self.requested_grid_export_limit = int(data['set_grid_export_limit_watts'])
                                 log.info(f'mqtt_client_task {self.serial_number} Setting export limit: {self.requested_grid_export_limit}')
                                 await self.set_grid_export_limit(self.requested_grid_export_limit)
                                 self.grid_export_limit = await self.get_grid_export_limit()
@@ -348,10 +419,10 @@ class Goodwe_MQTT:
                             log.info(f'mqtt_client_task {self.serial_number} Getting operation mode')
                             await self.get_operation_mode()
 
-                        elif 'set_eco_discharge' in message_payload:
+                        elif 'set_eco_discharge_percent' in message_payload:
                             try:
                                 data = json.loads(message_payload)
-                                power = int(data['set_eco_discharge'])
+                                power = int(data['set_eco_discharge_percent'])
                                 if 0 <= power <= 100:
                                     log.info(f'mqtt_client_task {self.serial_number} Setting eco discharge: {power}')
                                     await self.inverter.set_operation_mode(
@@ -363,11 +434,11 @@ class Goodwe_MQTT:
                             except (json.JSONDecodeError, KeyError, ValueError) as e:
                                 log.error(f'mqtt_client_task {self.serial_number} Invalid payload: {e}')
 
-                        elif 'set_eco_charge' in message_payload:
+                        elif 'set_eco_charge_percent' in message_payload:
                             try:
                                 data = json.loads(message_payload)
-                                power = int(data['set_eco_charge'])
-                                soc = int(data['target_battery_soc'])
+                                power = int(data['set_eco_charge_percent'])
+                                soc = int(data['target_battery_soc_percent'])
                                 if 0 <= power <= 100 and 0 <= soc <= 100:
                                     log.info(f'mqtt_client_task {self.serial_number} Setting eco charge: {power}, SoC: {soc}')
                                     await self.inverter.set_operation_mode(
@@ -442,6 +513,7 @@ class Goodwe_MQTT:
         """
         log.info(f'handle_set_message {self.serial_number} setting_id={setting_id} payload={payload_str}')
         payload_str = payload_str.strip()
+        inverter_setting_id = self._INVERTER_SETTING_ALIAS.get(setting_id, setting_id)
 
         # Determine the value to write
         if setting_id == 'work_mode':
@@ -467,11 +539,11 @@ class Goodwe_MQTT:
                     )
                     value = payload_str
 
-        success = await self.write_setting(setting_id, value)
+        success = await self.write_setting(inverter_setting_id, value)
         if success:
             # Read back and publish the updated state
             try:
-                current_value = await self.inverter.read_setting(setting_id)
+                current_value = await self.inverter.read_setting(inverter_setting_id)
                 state_topic = f'{self.mqtt_state_topic_prefix}/{setting_id}'
                 await self.send_mqtt_response(state_topic, {setting_id: current_value})
                 log.info(f'handle_set_message {self.serial_number} published state {setting_id}={current_value}')
@@ -501,28 +573,28 @@ class Goodwe_MQTT:
                 "options": list(self.WORK_MODE_OPTIONS.keys()),
                 "device": device,
             },
-            # battery_charge_current – number
+            # battery_charge_current_amps – number
             {
                 "component": "number",
-                "unique_id": f"{sn}_battery_charge_current",
+                "unique_id": f"{sn}_battery_charge_current_amps",
                 "name": "Battery Charge Current",
-                "command_topic": f"{base}/set/battery_charge_current",
-                "state_topic": f"{base}/state/battery_charge_current",
-                "value_template": "{{ value_json.battery_charge_current }}",
+                "command_topic": f"{base}/set/battery_charge_current_amps",
+                "state_topic": f"{base}/state/battery_charge_current_amps",
+                "value_template": "{{ value_json.battery_charge_current_amps }}",
                 "unit_of_measurement": "A",
                 "min": 0,
                 "max": 25,
                 "step": 1,
                 "device": device,
             },
-            # grid_export_limit – number
+            # grid_export_limit_watts – number
             {
                 "component": "number",
-                "unique_id": f"{sn}_grid_export_limit",
+                "unique_id": f"{sn}_grid_export_limit_watts",
                 "name": "Grid Export Limit",
-                "command_topic": f"{base}/set/grid_export_limit",
-                "state_topic": f"{base}/state/grid_export_limit",
-                "value_template": "{{ value_json.grid_export_limit }}",
+                "command_topic": f"{base}/set/grid_export_limit_watts",
+                "state_topic": f"{base}/state/grid_export_limit_watts",
+                "value_template": "{{ value_json.grid_export_limit_watts }}",
                 "unit_of_measurement": "W",
                 "min": 0,
                 "max": 10000,
@@ -545,7 +617,11 @@ class Goodwe_MQTT:
             The numeric export limit or None if read fails.
         """
         try:
-            self.grid_export_limit = await self.inverter.get_grid_export_limit()
+            raw = await self.inverter.get_grid_export_limit()
+            # The goodwe library returns an unsigned 16-bit register value; reinterpret as signed.
+            if isinstance(raw, int) and raw >= 0x8000:
+                raw = raw - 0x10000
+            self.grid_export_limit = raw
             log.debug(f'get_grid_export_limit {self.serial_number}: {self.grid_export_limit}')
             return self.grid_export_limit
         except Exception as e:
@@ -681,7 +757,10 @@ class Goodwe_MQTT:
 
                     while True:
                         now = datetime.now()
-                        next_fast_runtime_data_time = now + self.mqtt_fast_runtime_data_interval_seconds
+                        if self.mqtt_fast_runtime_data_interval_seconds.total_seconds() > 0:
+                            next_fast_runtime_data_time = now + self.mqtt_fast_runtime_data_interval_seconds
+                        else:
+                            next_fast_runtime_data_time = now + self.mqtt_runtime_data_interval_seconds
                         
                         log.debug(f'main_loop {self.serial_number} reading runtime data')
                         data = await self.read_runtime_data()
@@ -690,9 +769,10 @@ class Goodwe_MQTT:
                             await asyncio.sleep(5)
                             continue
 
-                        # Publish fast runtime data
-                        await client.publish(self.mqtt_fast_runtime_data_topic, payload=json.dumps(data))
-                        
+                        # Publish fast runtime data (disabled when interval is 0)
+                        if self.mqtt_fast_runtime_data_interval_seconds.total_seconds() > 0:
+                            await client.publish(self.mqtt_fast_runtime_data_topic, payload=json.dumps(data))
+
                         # Publish regular runtime data if interval reached
                         if now >= next_runtime_data_time:
                             next_runtime_data_time = now + self.mqtt_runtime_data_interval_seconds
@@ -712,6 +792,372 @@ class Goodwe_MQTT:
             except Exception as e:
                 log.error(f'Goodwe_MQTT {self.serial_number} main_loop exception: {e}. Retrying in 5s...')
                 await asyncio.sleep(5)
+
+class SEC1000S_MQTT:
+    """Manages a GoodWe SEC1000S energy controller via MQTT."""
+
+    def __init__(
+        self,
+        serial_number: str,
+        host: str,
+        port: int,
+        timeout: float,
+        min_limit_w: int,
+        contractual_limit_w: int,
+        contractual_safety_margin: float,
+        scan_three_phases: bool,
+        telemetry_interval_seconds: int,
+        grid_export_limit_interval_seconds: int,
+        set_verify_retries: int,
+        set_verify_delay_seconds: float,
+        mqtt_broker_ip: str,
+        mqtt_broker_port: int,
+        mqtt_username: Optional[str],
+        mqtt_password: Optional[str],
+        mqtt_topic_prefix: str,
+    ) -> None:
+        self.serial_number = serial_number
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+        self.min_limit_w = min_limit_w
+        self.contractual_limit_w = contractual_limit_w
+        self.effective_ceiling_w = int(contractual_limit_w * (1.0 - contractual_safety_margin))
+        self.scan_three_phases = scan_three_phases
+        self.telemetry_interval_seconds = telemetry_interval_seconds
+        self.grid_export_limit_interval_seconds = grid_export_limit_interval_seconds
+        self.set_verify_retries = set_verify_retries
+        self.set_verify_delay_seconds = set_verify_delay_seconds
+
+        self.mqtt_broker_ip = mqtt_broker_ip
+        self.mqtt_broker_port = mqtt_broker_port
+        self.mqtt_username = mqtt_username
+        self.mqtt_password = mqtt_password
+        self.contractual_safety_margin = contractual_safety_margin
+
+        base = f"{mqtt_topic_prefix}/sec1000s/{serial_number}"
+        self.mqtt_topic_base = base
+        self.telemetry_topic = f"{base}/telemetry"
+        self.grid_export_limit_topic = f"{base}/grid_export_limit"
+        self.status_topic = f"{base}/status"
+        self.control_topic = f"{base}/control"
+
+        log.info(str(self))
+
+        self.mqtt_task = asyncio.ensure_future(self.mqtt_client_task())
+        self.heartbeat_task_ref = asyncio.ensure_future(self.heartbeat_task())
+        self.telemetry_task_ref = asyncio.ensure_future(self.telemetry_loop())
+        self.grid_export_limit_task_ref = asyncio.ensure_future(self.grid_export_limit_loop())
+
+    def __str__(self) -> str:
+        margin_pct = int(self.contractual_safety_margin * 100)
+        return (
+            f"SEC1000S_MQTT {self.serial_number} init\n"
+            f"  device:    host={self.host} port={self.port} timeout={self.timeout}s\n"
+            f"  limits:    floor={self.min_limit_w}W  ceiling={self.effective_ceiling_w}W"
+            f" (contractual={self.contractual_limit_w}W margin={margin_pct}%)\n"
+            f"  broker:    ip={self.mqtt_broker_ip} port={self.mqtt_broker_port} user={self.mqtt_username}\n"
+            f"  intervals: telemetry={self.telemetry_interval_seconds}s"
+            f"  grid_export_limit={self.grid_export_limit_interval_seconds}s\n"
+            f"  settings:  scan_three_phases={str(self.scan_three_phases).lower()}"
+            f" retries={self.set_verify_retries} verify_delay={self.set_verify_delay_seconds}s\n"
+            f"  topics:    control={self.control_topic}\n"
+            f"             telemetry={self.telemetry_topic}\n"
+            f"             grid_export_limit={self.grid_export_limit_topic}"
+        )
+
+    async def heartbeat_task(self) -> None:
+        """Periodically publishes 'online' status to the MQTT broker."""
+        log.info(f"sec1000s heartbeat_task {self.serial_number} started")
+        while True:
+            try:
+                async with aiomqtt.Client(
+                    self.mqtt_broker_ip, self.mqtt_broker_port,
+                    username=self.mqtt_username, password=self.mqtt_password
+                ) as client:
+                    log.info(f"sec1000s heartbeat_task {self.serial_number} connected")
+                    while True:
+                        await client.publish(self.status_topic, payload=json.dumps("online"))
+                        await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.error(f"sec1000s heartbeat_task {self.serial_number} error: {e}. Retrying in 10s...")
+                await asyncio.sleep(10)
+
+    async def telemetry_loop(self) -> None:
+        """Periodically polls telemetry from the SEC1000S and publishes to MQTT."""
+        log.info(f"sec1000s telemetry_loop {self.serial_number} started")
+        while True:
+            try:
+                data = await sec1000s_protocol.get_telemetry(self.host, self.port, self.timeout)
+                data["serial_number"] = self.serial_number
+                data["last_seen"] = get_timezone_aware_local_time().isoformat()
+                await self.send_mqtt_response(self.telemetry_topic, data)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.debug(f"sec1000s telemetry_loop {self.serial_number} error: {e}")
+            try:
+                await asyncio.sleep(self.telemetry_interval_seconds)
+            except asyncio.CancelledError:
+                break
+
+    async def grid_export_limit_loop(self) -> None:
+        """Periodically polls grid export limit status and publishes to MQTT."""
+        log.info(f"sec1000s grid_export_limit_loop {self.serial_number} started")
+        while True:
+            try:
+                data = await sec1000s_protocol.get_grid_export_limit(self.host, self.port, self.timeout)
+                data["serial_number"] = self.serial_number
+                data["effective_ceiling_watts"] = self.effective_ceiling_w
+                data["last_seen"] = get_timezone_aware_local_time().isoformat()
+                await self.send_mqtt_response(self.grid_export_limit_topic, data)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.error(f"sec1000s grid_export_limit_loop {self.serial_number} error: {e}")
+            try:
+                await asyncio.sleep(self.grid_export_limit_interval_seconds)
+            except asyncio.CancelledError:
+                break
+
+    async def mqtt_client_task(self) -> None:
+        """Handles incoming control messages from the MQTT broker."""
+        log.debug(f"sec1000s mqtt_client_task {self.serial_number}")
+        while True:
+            try:
+                async with aiomqtt.Client(
+                    self.mqtt_broker_ip, self.mqtt_broker_port,
+                    username=self.mqtt_username, password=self.mqtt_password
+                ) as client:
+                    log.info(f"sec1000s mqtt_client_task {self.serial_number} connected")
+                    await client.subscribe(self.control_topic)
+                    try:
+                        startup_data = await sec1000s_protocol.get_grid_export_limit(
+                            self.host, self.port, self.timeout
+                        )
+                        log.info(
+                            f"sec1000s mqtt_client_task {self.serial_number} startup grid_export_limit: "
+                            f"{startup_data.get('grid_export_limit_watts')}W "
+                            f"(total_capacity={startup_data.get('total_capacity_watts')}W, "
+                            f"control_mode={startup_data.get('control_mode')}, "
+                            f"ratio_ct_raw={startup_data.get('ratio_ct_raw')})"
+                        )
+                    except Exception as e:
+                        log.error(
+                            f"sec1000s mqtt_client_task {self.serial_number} startup read failed: {e}"
+                        )
+                    async for message in client.messages:
+                        payload = message.payload
+                        if isinstance(payload, (bytes, bytearray)):
+                            message_payload = payload.decode("utf-8")
+                        else:
+                            message_payload = str(payload)
+                        log.info(
+                            f"sec1000s mqtt_client_task {self.serial_number} "
+                            f"topic={message.topic} payload={message_payload}"
+                        )
+
+                        try:
+                            cmd = json.loads(message_payload)
+                        except json.JSONDecodeError as e:
+                            log.error(
+                                f"sec1000s mqtt_client_task {self.serial_number} invalid JSON: {e}"
+                            )
+                            continue
+
+                        if "set_grid_export_limit_watts" in cmd:
+                            try:
+                                limit_w = int(cmd["set_grid_export_limit_watts"])
+                                await self.set_grid_export_limit_with_verify(limit_w)
+                            except (KeyError, ValueError) as e:
+                                log.error(
+                                    f"sec1000s mqtt_client_task {self.serial_number} invalid payload: {e}"
+                                )
+                        elif "get_grid_export_limit_watts" in cmd or "get_grid_export_limit" in cmd:
+                            try:
+                                data = await sec1000s_protocol.get_grid_export_limit(
+                                    self.host, self.port, self.timeout
+                                )
+                                data["effective_ceiling_watts"] = self.effective_ceiling_w
+                                data["last_seen"] = get_timezone_aware_local_time().isoformat()
+                                await self.send_mqtt_response(self.grid_export_limit_topic, data)
+                            except Exception as e:
+                                log.error(
+                                    f"sec1000s mqtt_client_task {self.serial_number} "
+                                    f"get_grid_export_limit failed: {e}"
+                                )
+                        elif "get_telemetry" in cmd:
+                            try:
+                                data = await sec1000s_protocol.get_telemetry(
+                                    self.host, self.port, self.timeout
+                                )
+                                data["last_seen"] = get_timezone_aware_local_time().isoformat()
+                                await self.send_mqtt_response(self.telemetry_topic, data)
+                            except Exception as e:
+                                log.error(
+                                    f"sec1000s mqtt_client_task {self.serial_number} "
+                                    f"get_telemetry failed: {e}"
+                                )
+                        else:
+                            log.error(
+                                f"sec1000s mqtt_client_task {self.serial_number} "
+                                f"unknown command: {message_payload}"
+                            )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                log.error(
+                    f"sec1000s mqtt_client_task {self.serial_number} MQTT error: {e}. "
+                    "Reconnecting in 5s..."
+                )
+                await asyncio.sleep(5)
+
+    async def set_grid_export_limit_with_verify(self, limit_w: int) -> None:
+        """Set grid export limit with safety checks and readback verification.
+
+        Steps:
+          1. Reject if ``limit_w < min_limit_w`` (safety floor).
+          2. Clamp silently to ``effective_ceiling_w`` if above ceiling.
+          3. Read current total_capacity from device.
+          4. Call ``set_grid_export_limit`` then ``enable_value_mode`` to activate.
+          5. Readback after delay; retry up to ``set_verify_retries`` times.
+        """
+        if limit_w < self.min_limit_w:
+            log.error(
+                f"sec1000s {self.serial_number} set_grid_export_limit_with_verify: "
+                f"limit {limit_w}W is below safety floor {self.min_limit_w}W — rejecting"
+            )
+            await self.send_mqtt_response(self.grid_export_limit_topic, {
+                "error": (
+                    f"limit {limit_w}W is below safety floor {self.min_limit_w}W"
+                ),
+                "last_seen": get_timezone_aware_local_time().isoformat(),
+            })
+            return
+
+        if limit_w > self.effective_ceiling_w:
+            log.info(
+                f"sec1000s {self.serial_number} clamping {limit_w}W "
+                f"to effective ceiling {self.effective_ceiling_w}W "
+                f"(contractual={self.contractual_limit_w}W)"
+            )
+            limit_w = self.effective_ceiling_w
+
+        for attempt in range(1, self.set_verify_retries + 1):
+            log.info(
+                f"sec1000s {self.serial_number} set_grid_export_limit attempt "
+                f"{attempt}/{self.set_verify_retries}: {limit_w}W"
+            )
+            try:
+                current = await sec1000s_protocol.get_grid_export_limit(
+                    self.host, self.port, self.timeout
+                )
+                total_capacity_w = current.get("total_capacity_watts", 0)
+                if total_capacity_w <= 0:
+                    log.warning(
+                        f"sec1000s {self.serial_number} total_capacity_watts={total_capacity_w}, "
+                        "defaulting to 10000W"
+                    )
+                    total_capacity_w = 10000
+
+                set_ack = await sec1000s_protocol.set_grid_export_limit(
+                    self.host, self.port, self.timeout,
+                    limit_watts=limit_w,
+                    total_capacity_watts=total_capacity_w,
+                    scan_three_phases=self.scan_three_phases,
+                )
+                if set_ack is False:
+                    raise RuntimeError(
+                        f"sec1000s {self.serial_number} did not acknowledge set_grid_export_limit"
+                    )
+
+                enable_ack = await sec1000s_protocol.enable_value_mode(
+                    self.host, self.port, self.timeout
+                )
+                if enable_ack is False:
+                    raise RuntimeError(
+                        f"sec1000s {self.serial_number} did not acknowledge enable_value_mode"
+                    )
+                await asyncio.sleep(self.set_verify_delay_seconds)
+
+                readback = await sec1000s_protocol.get_grid_export_limit(
+                    self.host, self.port, self.timeout
+                )
+                readback_w = readback.get("grid_export_limit_watts", -1)
+
+                if abs(readback_w - limit_w) < 50:
+                    log.info(
+                        f"sec1000s {self.serial_number} grid export limit confirmed: {readback_w}W"
+                    )
+                    readback["effective_ceiling_watts"] = self.effective_ceiling_w
+                    readback["last_seen"] = get_timezone_aware_local_time().isoformat()
+                    await self.send_mqtt_response(self.grid_export_limit_topic, readback)
+                    return
+
+                log.warning(
+                    f"sec1000s {self.serial_number} readback mismatch: "
+                    f"requested {limit_w}W, got {readback_w}W"
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                log.error(
+                    f"sec1000s {self.serial_number} set_grid_export_limit attempt {attempt} error: {e}"
+                )
+
+        log.error(
+            f"sec1000s {self.serial_number} failed to confirm grid export limit "
+            f"after {self.set_verify_retries} attempts"
+        )
+        await self.send_mqtt_response(self.grid_export_limit_topic, {
+            "error": (
+                f"failed to set grid export limit to {limit_w}W "
+                f"after {self.set_verify_retries} attempts"
+            ),
+            "last_seen": get_timezone_aware_local_time().isoformat(),
+        })
+
+    async def send_mqtt_response(self, topic: str, payload: Dict[str, Any]) -> None:
+        """Sends a JSON-encoded payload to a specific MQTT topic."""
+        try:
+            async with aiomqtt.Client(
+                self.mqtt_broker_ip, self.mqtt_broker_port,
+                username=self.mqtt_username, password=self.mqtt_password
+            ) as client:
+                log.debug(f"sec1000s {self.serial_number} send_mqtt_response {topic}: {payload}")
+                await client.publish(topic, payload=json.dumps(payload))
+        except Exception as e:
+            log.error(f"sec1000s {self.serial_number} send_mqtt_response error: {e}")
+
+    async def publish_ha_discovery(self) -> None:
+        """Publishes Home Assistant MQTT Discovery payload for export limit control."""
+        name = self.serial_number
+        base = self.mqtt_topic_base
+        device = {
+            "identifiers": [f"sec1000s_{name}"],
+            "name": f"SEC1000S {name}",
+            "manufacturer": "GoodWe",
+            "model": "SEC1000S",
+        }
+        entity = {
+            "unique_id": f"sec1000s_{name}_grid_export_limit_watts",
+            "name": "Grid Export Limit",
+            "command_topic": f"{base}/control",
+            "command_template": '{"set_grid_export_limit_watts": {{ value }}}',
+            "state_topic": f"{base}/grid_export_limit",
+            "value_template": "{{ value_json.grid_export_limit_watts }}",
+            "unit_of_measurement": "W",
+            "min": self.min_limit_w,
+            "max": self.effective_ceiling_w,
+            "step": 100,
+            "device": device,
+        }
+        discovery_topic = f"homeassistant/number/{entity['unique_id']}/config"
+        log.info(f"sec1000s {name} publish_ha_discovery {discovery_topic}")
+        await self.send_mqtt_response(discovery_topic, entity)
+
 
 async def main(config: Dict[str, Any]) -> None:
     """Entry point for starting the daemon with multiple inverters.
@@ -746,8 +1192,46 @@ async def main(config: Dict[str, Any]) -> None:
         # Distribute communication load
         await asyncio.sleep(config["mqtt"]["fast_runtime_data_interval_seconds"] / 2.0)
 
+    # Spawn SEC1000S device instances
+    sec1000s_devices: List[SEC1000S_MQTT] = []
+    for sec_cfg in config.get("sec1000s", {}).get("devices", []):
+        if not sec_cfg.get("host") or not sec_cfg.get("serial_number"):
+            log.warning(f'main skipping SEC1000S device with missing host/serial_number: {sec_cfg}')
+            continue
+        if not sec_cfg.get("contractual_limit_w"):
+            log.warning(
+                f'main skipping SEC1000S device {sec_cfg.get("serial_number")!r}: '
+                "contractual_limit_w is not set"
+            )
+            continue
+        sec = SEC1000S_MQTT(
+            serial_number=sec_cfg["serial_number"],
+            host=sec_cfg["host"],
+            port=sec_cfg["port"],
+            timeout=sec_cfg["timeout"],
+            min_limit_w=sec_cfg["min_limit_w"],
+            contractual_limit_w=sec_cfg["contractual_limit_w"],
+            contractual_safety_margin=sec_cfg["contractual_safety_margin"],
+            scan_three_phases=sec_cfg["scan_three_phases"],
+            telemetry_interval_seconds=sec_cfg["telemetry_interval_seconds"],
+            grid_export_limit_interval_seconds=sec_cfg["grid_export_limit_interval_seconds"],
+            set_verify_retries=sec_cfg["set_verify_retries"],
+            set_verify_delay_seconds=sec_cfg["set_verify_delay_seconds"],
+            mqtt_broker_ip=config["mqtt"]["broker_ip"],
+            mqtt_broker_port=config["mqtt"]["broker_port"],
+            mqtt_username=config["mqtt"].get("username"),
+            mqtt_password=config["mqtt"].get("password"),
+            mqtt_topic_prefix=config["mqtt"]["topic_prefix"],
+        )
+        sec1000s_devices.append(sec)
+        log.info(f'main spawned SEC1000S_MQTT {sec_cfg["serial_number"]}')
+
     # Gather tasks to keep main running
     tasks = [inv.mqtt_task for inv in inverters] + [inv.heartbeat_task_ref for inv in inverters]
+    tasks += [sec.mqtt_task for sec in sec1000s_devices]
+    tasks += [sec.heartbeat_task_ref for sec in sec1000s_devices]
+    tasks += [sec.telemetry_task_ref for sec in sec1000s_devices]
+    tasks += [sec.grid_export_limit_task_ref for sec in sec1000s_devices]
     await asyncio.gather(*tasks)
 
 def read_config(file_path: str) -> Dict[str, Any]:
@@ -763,6 +1247,7 @@ def read_config(file_path: str) -> Dict[str, Any]:
         config = _build_default_config()
         override_config_from_env(config)
         override_inverters_from_env(config)
+        override_sec1000s_from_env(config)
 
         if not config["goodwe"]["inverters"]:
             log.error(
