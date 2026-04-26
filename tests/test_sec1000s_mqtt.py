@@ -1,6 +1,5 @@
 """Unit tests for SEC1000S_MQTT class — safety logic, MQTT dispatch, verify loop."""
 import asyncio
-import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 

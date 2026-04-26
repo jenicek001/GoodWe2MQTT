@@ -171,12 +171,12 @@ def main() -> None:
     print(f"  Response: {rx.hex()}")
 
     # Step 3: arm VALUE-mode control
-    print(f"\n--- Step 3: Enable VALUE-mode control ---")
+    print("\n--- Step 3: Enable VALUE-mode control ---")
     rx = enable_value_mode()
     print(f"  Response: {rx.hex()}")
 
     # Step 4: read back to confirm
-    print(f"\n--- Step 4: Read back export limit ---")
+    print("\n--- Step 4: Read back export limit ---")
     settings2 = get_export_limit()
     readback = settings2["export_limit_kw"]
     print(f"  export_limit_kw: {readback} kW  (requested: {LIMIT_KW} kW)")
