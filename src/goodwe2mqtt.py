@@ -1055,14 +1055,24 @@ class SEC1000S_MQTT:
                     )
                     total_capacity_w = 10000
 
-                await sec1000s_protocol.enable_value_mode(self.host, self.port, self.timeout)
-                await sec1000s_protocol.set_grid_export_limit(
+                set_ack = await sec1000s_protocol.set_grid_export_limit(
                     self.host, self.port, self.timeout,
                     limit_watts=limit_w,
                     total_capacity_watts=total_capacity_w,
                     scan_three_phases=self.scan_three_phases,
                 )
+                if set_ack is False:
+                    raise RuntimeError(
+                        f"sec1000s {self.serial_number} did not acknowledge set_grid_export_limit"
+                    )
 
+                enable_ack = await sec1000s_protocol.enable_value_mode(
+                    self.host, self.port, self.timeout
+                )
+                if enable_ack is False:
+                    raise RuntimeError(
+                        f"sec1000s {self.serial_number} did not acknowledge enable_value_mode"
+                    )
                 await asyncio.sleep(self.set_verify_delay_seconds)
 
                 readback = await sec1000s_protocol.get_grid_export_limit(
