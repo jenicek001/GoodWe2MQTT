@@ -959,16 +959,23 @@ class SEC1000S_MQTT:
                             f"topic={message.topic} payload={message_payload}"
                         )
 
-                        if "set_grid_export_limit_watts" in message_payload:
+                        try:
+                            cmd = json.loads(message_payload)
+                        except json.JSONDecodeError as e:
+                            log.error(
+                                f"sec1000s mqtt_client_task {self.serial_number} invalid JSON: {e}"
+                            )
+                            continue
+
+                        if "set_grid_export_limit_watts" in cmd:
                             try:
-                                data = json.loads(message_payload)
-                                limit_w = int(data["set_grid_export_limit_watts"])
+                                limit_w = int(cmd["set_grid_export_limit_watts"])
                                 await self.set_grid_export_limit_with_verify(limit_w)
-                            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                            except (KeyError, ValueError) as e:
                                 log.error(
                                     f"sec1000s mqtt_client_task {self.serial_number} invalid payload: {e}"
                                 )
-                        elif "get_grid_export_limit" in message_payload:
+                        elif "get_grid_export_limit_watts" in cmd or "get_grid_export_limit" in cmd:
                             try:
                                 data = await sec1000s_protocol.get_grid_export_limit(
                                     self.host, self.port, self.timeout
@@ -981,7 +988,7 @@ class SEC1000S_MQTT:
                                     f"sec1000s mqtt_client_task {self.serial_number} "
                                     f"get_grid_export_limit failed: {e}"
                                 )
-                        elif "get_telemetry" in message_payload:
+                        elif "get_telemetry" in cmd:
                             try:
                                 data = await sec1000s_protocol.get_telemetry(
                                     self.host, self.port, self.timeout
