@@ -9,4 +9,5 @@ SEC1000S protocol reverse-engineering sourced from https://github.com/jozef-mora
 - [Architecture](docs/architecture.md)
 - [Dependency Management](docs/dependency_management.md)
 - [MQTT API Specification](docs/mqtt_api.md)
+- [EMS Mode Usage Guide](docs/ems_mode_usage.md)
 - [Contributing Guidelines](CONTRIBUTING.md)
