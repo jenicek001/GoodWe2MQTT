@@ -587,7 +587,14 @@ class Goodwe_MQTT:
                     )
                     value = payload_str
 
-        if setting_id == 'ems_power_limit_watts' and isinstance(value, (int, float)):
+        if setting_id == 'ems_power_limit_watts':
+            try:
+                value = int(payload_str)
+            except ValueError:
+                log.error(
+                    f'handle_set_message {self.serial_number} invalid ems_power_limit_watts value: {payload_str}'
+                )
+                return
             if not (self.EMS_POWER_LIMIT_MIN_WATTS <= value <= self.EMS_POWER_LIMIT_MAX_WATTS):
                 log.error(
                     f'handle_set_message {self.serial_number} ems_power_limit_watts out of range: {value}'
