@@ -60,6 +60,11 @@ There are two equivalent ways to control EMS mode over MQTT.
 
 ### Option A — `/control` topic (JSON command)
 
+> The `/control` payload must be a valid JSON **object** (`{...}`). Malformed
+> JSON, or valid JSON that isn't an object (e.g. a bare number or array), is
+> rejected and logged as an error without affecting the inverter. The value
+> attached to `get_ems_mode` is ignored — only the key's presence matters.
+
 ```bash
 # Read current EMS mode + power limit
 mosquitto_pub -h BROKER -t goodwe2mqtt/SERIAL/control -m '{"get_ems_mode": 1}'
@@ -150,6 +155,23 @@ they always reflect the latest confirmed mode/limit together.
 - **Out-of-range power limit rejected** — `ems_power_limit_watts` must be
   between 0 and 15000 W; values outside this range are rejected and logged
   as an error without being sent to the inverter.
+- **Invalid `/control` payload rejected** — the payload must be a JSON
+  object; malformed JSON or a non-object JSON value (bare number, string,
+  array) is logged as an error and ignored.
+- **`ems_mode` shows a value I never set** — GoodWe2MQTT never writes
+  `ems_mode` on its own (only the `set_ems_mode` command does, on explicit
+  request). `ems_mode` and `ems_power_limit` are *persistent* inverter
+  settings (register `47511`/`47512`), so the very first read after
+  deploying this feature simply reports whatever was already stored on the
+  inverter — e.g. from the SEMS app, a previous manual Modbus write, or
+  factory defaults. This is normal; if you want self-managed behaviour,
+  explicitly set `AUTO`:
+  ```bash
+  mosquitto_pub -h BROKER -t goodwe2mqtt/SERIAL/control -m '{"set_ems_mode": 1}'
+  ```
+  A mode like `CHARGE_BATTERY` with `ems_power_limit_watts: 0` and a full
+  battery has no visible effect (there is no power to charge with), so it
+  can sit unnoticed for a long time before being reported here.
 
 See also: [MQTT API Specification](mqtt_api.md) and the original
 [EMS Mode Integration Plan](ems_mode_integration_plan.md).
