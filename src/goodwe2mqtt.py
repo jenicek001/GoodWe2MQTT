@@ -408,16 +408,25 @@ class Goodwe_MQTT:
                             await self.handle_set_message(setting_id, message_payload)
                             continue
 
-                        if 'get_grid_export_limit_watts' in message_payload:
+                        try:
+                            data = json.loads(message_payload)
+                        except json.JSONDecodeError as e:
+                            log.error(f'mqtt_client_task {self.serial_number} Invalid JSON payload: {e}')
+                            continue
+
+                        if not isinstance(data, dict):
+                            log.error(f'mqtt_client_task {self.serial_number} Invalid command: {message_payload}')
+                            continue
+
+                        if 'get_grid_export_limit_watts' in data:
                             log.info(f'mqtt_client_task {self.serial_number} Getting export limit')
                             self.grid_export_limit = await self.get_grid_export_limit()
                             if self.grid_export_limit is not None:
                                 log.info(f'mqtt_client_task {self.serial_number} Got export limit: {self.grid_export_limit}')
                                 await self.send_mqtt_export_limit(self.grid_export_limit)
 
-                        elif 'set_grid_export_limit_watts' in message_payload:
+                        elif 'set_grid_export_limit_watts' in data:
                             try:
-                                data = json.loads(message_payload)
                                 self.requested_grid_export_limit = int(data['set_grid_export_limit_watts'])
                                 log.info(f'mqtt_client_task {self.serial_number} Setting export limit: {self.requested_grid_export_limit}')
                                 await self.set_grid_export_limit(self.requested_grid_export_limit)
@@ -425,16 +434,15 @@ class Goodwe_MQTT:
                                 if self.grid_export_limit is not None:
                                     log.info(f'mqtt_client_task {self.serial_number} Confirmed export limit: {self.grid_export_limit}')
                                     await self.send_mqtt_export_limit(self.grid_export_limit)
-                            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                            except (KeyError, ValueError) as e:
                                 log.error(f'mqtt_client_task {self.serial_number} Invalid payload: {e}')
 
-                        elif 'get_operation_mode' in message_payload:
+                        elif 'get_operation_mode' in data:
                             log.info(f'mqtt_client_task {self.serial_number} Getting operation mode')
                             await self.get_operation_mode()
 
-                        elif 'set_eco_discharge_percent' in message_payload:
+                        elif 'set_eco_discharge_percent' in data:
                             try:
-                                data = json.loads(message_payload)
                                 power = int(data['set_eco_discharge_percent'])
                                 if 0 <= power <= 100:
                                     log.info(f'mqtt_client_task {self.serial_number} Setting eco discharge: {power}')
@@ -444,12 +452,11 @@ class Goodwe_MQTT:
                                     await self.get_operation_mode()
                                 else:
                                     log.error(f'mqtt_client_task {self.serial_number} Invalid power: {power}')
-                            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                            except (KeyError, ValueError) as e:
                                 log.error(f'mqtt_client_task {self.serial_number} Invalid payload: {e}')
 
-                        elif 'set_eco_charge_percent' in message_payload:
+                        elif 'set_eco_charge_percent' in data:
                             try:
-                                data = json.loads(message_payload)
                                 power = int(data['set_eco_charge_percent'])
                                 soc = int(data['target_battery_soc_percent'])
                                 if 0 <= power <= 100 and 0 <= soc <= 100:
@@ -460,10 +467,10 @@ class Goodwe_MQTT:
                                     await self.get_operation_mode()
                                 else:
                                     log.error(f'mqtt_client_task {self.serial_number} Invalid params: {power}, {soc}')
-                            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                            except (KeyError, ValueError) as e:
                                 log.error(f'mqtt_client_task {self.serial_number} Invalid payload: {e}')
 
-                        elif 'set_general_operation_mode' in message_payload:
+                        elif 'set_general_operation_mode' in data:
                             log.info(f'mqtt_client_task {self.serial_number} Setting general mode')
                             try:
                                 await self.inverter.set_operation_mode(operation_mode=OperationMode.GENERAL)
@@ -471,13 +478,12 @@ class Goodwe_MQTT:
                             except Exception as e:
                                 log.error(f'mqtt_client_task {self.serial_number} Error: {e}')
 
-                        elif 'get_ems_mode' in message_payload:
+                        elif 'get_ems_mode' in data:
                             log.info(f'mqtt_client_task {self.serial_number} Getting EMS mode')
                             await self.get_ems_mode()
 
-                        elif 'set_ems_mode' in message_payload:
+                        elif 'set_ems_mode' in data:
                             try:
-                                data = json.loads(message_payload)
                                 mode_value = int(data['set_ems_mode'])
                                 ems_mode = EMSMode(mode_value)
                                 power_limit = None
@@ -491,7 +497,7 @@ class Goodwe_MQTT:
                                         continue
                                 log.info(f'mqtt_client_task {self.serial_number} Setting EMS mode: {ems_mode} limit={power_limit}')
                                 await self.set_ems_mode(ems_mode, power_limit)
-                            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                            except (KeyError, ValueError) as e:
                                 log.error(f'mqtt_client_task {self.serial_number} Invalid EMS payload: {e}')
 
                         else:

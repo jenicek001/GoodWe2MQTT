@@ -56,6 +56,10 @@ By default, `<topic_prefix>` is `goodwe2mqtt`.
 - **Topic:** `goodwe2mqtt/<serial>/control`
 - **Payload:** JSON object specifying the action.
 
+The payload must be a valid JSON object (`{...}`); malformed JSON or a
+non-object JSON value (e.g. a bare number, string, or array) is rejected and
+logged as an error without affecting the inverter.
+
 #### Actions:
 
 - **Get Grid Export Limit:**
