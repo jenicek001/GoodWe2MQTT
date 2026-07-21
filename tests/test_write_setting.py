@@ -247,7 +247,7 @@ async def test_mqtt_client_task_routes_set_message():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_publish_ha_discovery_publishes_three_entities():
+async def test_publish_ha_discovery_publishes_five_entities():
     """publish_ha_discovery should publish configs for all five entities."""
     gw = make_gw()
 
