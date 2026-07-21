@@ -76,6 +76,68 @@ docker run -d \
   goodwe2mqtt
 ```
 
+## Upgrading to a New Version
+
+`goodwe2mqtt` has no separate release/image tags — the image is always built
+locally from the checked-out source (`build: .` in `docker-compose.yml`).
+Deploying a new version means: pull the new code, rebuild the image, and
+recreate the container.
+
+### Using Docker Compose (Recommended)
+
+```bash
+# 1. Pull the latest code (or checkout the desired tag/branch)
+git pull
+
+# 2. Check .env.example for any new/changed variables and update your .env accordingly
+diff .env.example .env
+
+# 3. Rebuild the image and recreate the container(s)
+docker compose up -d --build
+# ...or, if using the bundled Mosquitto broker:
+docker compose -f docker-compose.yml -f docker-compose.mqtt.yml up -d --build
+
+# 4. Verify it started cleanly
+docker compose logs -f
+```
+
+`docker compose up -d --build` rebuilds the image only if the build context
+(source, `pyproject.toml`, `poetry.lock`, `Dockerfile`) changed, then recreates
+and restarts the container with the new image. Existing `.env` settings,
+volumes (`./logs`), and container name are preserved.
+
+### Using Docker Run
+
+```bash
+git pull
+docker build -t goodwe2mqtt .
+docker stop goodwe2mqtt && docker rm goodwe2mqtt
+docker run -d \
+  --name goodwe2mqtt \
+  --network host \
+  --env-file .env \
+  -v $(pwd)/logs:/app/logs \
+  goodwe2mqtt
+```
+
+### Rolling Back
+
+If the new version misbehaves, check out the previous commit/tag and repeat
+the rebuild steps above:
+
+```bash
+git checkout <previous-commit-or-tag>
+docker compose up -d --build
+```
+
+### Notes for this release (EMS Mode support)
+
+- No new `.env` variables are required — EMS mode topics
+  (`goodwe2mqtt/<serial>/ems_mode`, `/set/ems_mode`, `/set/ems_power_limit_watts`)
+  are enabled automatically per configured inverter.
+- See the [EMS Mode Usage Guide](ems_mode_usage.md) for how to use the new
+  functionality once deployed.
+
 ## Environment Variables
 
 Configuration is provided via environment variables using the `G2M_<SECTION>_<KEY>` pattern.
