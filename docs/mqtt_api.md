@@ -36,7 +36,14 @@ By default, `<topic_prefix>` is `goodwe2mqtt`.
   {"operation_mode": 1, "serial_number": "...", "last_seen": "..."}
   ```
 
-### 5. Daemon Status (Heartbeat)
+### 5. EMS Mode
+- **Topic:** `goodwe2mqtt/<serial>/ems_mode`
+- **Payload:** JSON object with the current EMS mode and power limit.
+  ```json
+  {"ems_mode": 8, "ems_mode_name": "BATTERY_STANDBY", "ems_power_limit_watts": 0, "serial_number": "...", "last_seen": "..."}
+  ```
+
+### 6. Daemon Status (Heartbeat)
 - **Topic:** `goodwe2mqtt/<serial>/status`
 - **Payload:** `"online"` (JSON string)
 - **Interval:** 30 seconds
@@ -63,6 +70,30 @@ By default, `<topic_prefix>` is `goodwe2mqtt`.
   `{"set_eco_discharge_percent": 50}` (Value in % of rated power, 0–100)
 - **Set Eco Charge (Grid to Battery):**
   `{"set_eco_charge_percent": 50, "target_battery_soc_percent": 80}` (Power % and Target SoC %)
+- **Get EMS Mode:**
+  `{"get_ems_mode": 1}`
+- **Set EMS Mode:**
+  `{"set_ems_mode": 8}` (integer value, see `EMSMode` enum below)
+  `{"set_ems_mode": 12, "ems_power_limit_watts": 3000}` (with a power setpoint, 0 – 15000 W)
+
+#### EMS Mode values (`goodwe.inverter.EMSMode`)
+
+| Value | Name | Behaviour | `ems_power_limit_watts` |
+|---|---|---|---|
+| 1 | `AUTO` | Self-use; battery follows meter | Not used |
+| 2 | `CHARGE_PV` | Charge from PV (priority) or Grid | Max charge W |
+| 3 | `DISCHARGE_PV` | Discharge battery + PV surplus to grid | Max discharge W |
+| 4 | `IMPORT_AC` | Charge from Grid (priority) or PV | Target charge W |
+| 5 | `EXPORT_AC` | Sell to grid; PV preferred, battery tops up | Target export W |
+| 6 | `CONSERVE` | Charge from PV only; no on-grid discharge | Not used |
+| 7 | `OFF_GRID` | Forced off-grid operation | Not used |
+| 8 | `BATTERY_STANDBY` | Battery idle (`P_battery = 0`) | Not used |
+| 9 | `BUY_POWER` | Hold import at exactly `ems_power_limit_watts` W | Target import W |
+| 10 | `SELL_POWER` | Hold export at exactly `ems_power_limit_watts` W | Target export W |
+| 11 | `CHARGE_BATTERY` | Force charge at `ems_power_limit_watts` W | Target charge W |
+| 12 | `DISCHARGE_BATTERY` | Force discharge at `ems_power_limit_watts` W | Target discharge W |
+
+EMS mode is only meaningful when `work_mode` is General (0) or ECO (4).
 
 ---
 
@@ -82,6 +113,8 @@ Supported settings:
 | `work_mode` | Operation mode | string or integer | `"General mode"` (0), `"Off grid mode"` (1), `"Backup mode"` (2), `"Eco mode"` (4) |
 | `battery_charge_current_amps` | Max battery charge current | integer | 0 – 25 (A) |
 | `grid_export_limit_watts` | Grid export power limit | integer | 0 – 10000 (W) |
+| `ems_mode` | EMS mode | string (name) or integer | `"BATTERY_STANDBY"`, `8`, etc. (see EMS Mode values above) |
+| `ems_power_limit_watts` | EMS power setpoint | integer | 0 – 15000 (W) |
 
 **Examples:**
 
@@ -94,6 +127,13 @@ mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/grid_export_limit_watts -m 
 
 # Set battery charge current to 10 A
 mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/battery_charge_current_amps -m "10"
+
+# Set EMS mode to BATTERY_STANDBY (by name or raw integer)
+mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/ems_mode -m "BATTERY_STANDBY"
+mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/ems_mode -m "8"
+
+# Set EMS power limit to 3000 W
+mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/ems_power_limit_watts -m "3000"
 ```
 
 The state topic payload is a JSON object:
@@ -102,6 +142,12 @@ The state topic payload is a JSON object:
 {"grid_export_limit_watts": 5000}
 {"battery_charge_current_amps": 10}
 ```
+
+> **Note:** `ems_mode` and `ems_power_limit_watts` are the exception — writes to
+> these two `/set/` topics republish the full combined state on
+> `goodwe2mqtt/<serial>/ems_mode` (see [EMS Mode](#5-ems-mode) above) rather
+> than on a `/state/ems_mode` topic, so that the Home Assistant select and
+> number entities share a single, always-consistent state source.
 
 ---
 
@@ -115,6 +161,8 @@ entities appear automatically in Home Assistant.
 | Operation Mode | `select` | `homeassistant/select/<serial>_work_mode/config` |
 | Battery Charge Current | `number` | `homeassistant/number/<serial>_battery_charge_current_amps/config` |
 | Grid Export Limit | `number` | `homeassistant/number/<serial>_grid_export_limit_watts/config` |
+| EMS Mode | `select` | `homeassistant/select/<serial>_ems_mode/config` |
+| EMS Power Limit | `number` | `homeassistant/number/<serial>_ems_power_limit_watts/config` |
 
 ---
 
