@@ -19,7 +19,7 @@ import sys
 import os
 import re
 from logger import log
-from goodwe.inverter import OperationMode
+from goodwe.inverter import OperationMode, EMSMode
 import sec1000s_protocol
 
 config_file = ".env"
@@ -267,6 +267,7 @@ class Goodwe_MQTT:
         self.mqtt_fast_runtime_data_interval_seconds = timedelta(seconds=mqtt_fast_runtime_data_interval_seconds)
         self.grid_export_limit_topic = f'{mqtt_topic}/{mqtt_grid_export_limit_topic_postfix}'
         self.operation_mode_topic = f'{mqtt_topic}/operation_mode'
+        self.ems_mode_topic = f'{mqtt_topic}/{self.EMS_MODE_TOPIC_POSTFIX}'
         self.status_topic = f'{mqtt_topic}/status'
 
         self.inverter: Any = None
@@ -282,7 +283,19 @@ class Goodwe_MQTT:
     _INVERTER_SETTING_ALIAS: Dict[str, str] = {
         "grid_export_limit_watts": "grid_export_limit",
         "battery_charge_current_amps": "battery_charge_current",
+        "ems_mode": "ems_mode",
+        "ems_power_limit_watts": "ems_power_limit",
     }
+
+    # Postfix for the combined EMS mode + power limit state topic
+    EMS_MODE_TOPIC_POSTFIX = "ems_mode"
+
+    # EMS mode name → integer value mapping (from goodwe.inverter.EMSMode)
+    EMS_MODE_OPTIONS: Dict[str, int] = {m.name: m.value for m in EMSMode}
+
+    # Minimum/maximum allowed EMS power limit (Watts)
+    EMS_POWER_LIMIT_MIN_WATTS = 0
+    EMS_POWER_LIMIT_MAX_WATTS = 15000
 
     def __str__(self) -> str:
         interval_rt = int(self.mqtt_runtime_data_interval_seconds.total_seconds())
@@ -458,6 +471,29 @@ class Goodwe_MQTT:
                             except Exception as e:
                                 log.error(f'mqtt_client_task {self.serial_number} Error: {e}')
 
+                        elif 'get_ems_mode' in message_payload:
+                            log.info(f'mqtt_client_task {self.serial_number} Getting EMS mode')
+                            await self.get_ems_mode()
+
+                        elif 'set_ems_mode' in message_payload:
+                            try:
+                                data = json.loads(message_payload)
+                                mode_value = int(data['set_ems_mode'])
+                                ems_mode = EMSMode(mode_value)
+                                power_limit = None
+                                if 'ems_power_limit_watts' in data:
+                                    power_limit = int(data['ems_power_limit_watts'])
+                                    if not (self.EMS_POWER_LIMIT_MIN_WATTS <= power_limit <= self.EMS_POWER_LIMIT_MAX_WATTS):
+                                        log.error(
+                                            f'mqtt_client_task {self.serial_number} '
+                                            f'ems_power_limit_watts out of range: {power_limit}'
+                                        )
+                                        continue
+                                log.info(f'mqtt_client_task {self.serial_number} Setting EMS mode: {ems_mode} limit={power_limit}')
+                                await self.set_ems_mode(ems_mode, power_limit)
+                            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                                log.error(f'mqtt_client_task {self.serial_number} Invalid EMS payload: {e}')
+
                         else:
                             log.error(f'mqtt_client_task {self.serial_number} Invalid command: {message_payload}')
             
@@ -525,6 +561,18 @@ class Goodwe_MQTT:
                 except ValueError:
                     log.error(f'handle_set_message {self.serial_number} invalid work_mode value: {payload_str}')
                     return
+        elif setting_id == 'ems_mode':
+            if payload_str in self.EMS_MODE_OPTIONS:
+                value = self.EMS_MODE_OPTIONS[payload_str]
+            else:
+                try:
+                    value = int(payload_str)
+                except ValueError:
+                    log.error(f'handle_set_message {self.serial_number} invalid ems_mode value: {payload_str}')
+                    return
+            if value not in {m.value for m in EMSMode}:
+                log.error(f'handle_set_message {self.serial_number} invalid ems_mode value: {payload_str}')
+                return
         else:
             try:
                 # Prefer integer, fall back to float, then string
@@ -539,8 +587,20 @@ class Goodwe_MQTT:
                     )
                     value = payload_str
 
+        if setting_id == 'ems_power_limit_watts' and isinstance(value, (int, float)):
+            if not (self.EMS_POWER_LIMIT_MIN_WATTS <= value <= self.EMS_POWER_LIMIT_MAX_WATTS):
+                log.error(
+                    f'handle_set_message {self.serial_number} ems_power_limit_watts out of range: {value}'
+                )
+                return
+
         success = await self.write_setting(inverter_setting_id, value)
         if success:
+            if setting_id in ('ems_mode', 'ems_power_limit_watts'):
+                # Publish the combined EMS mode + power limit state topic instead of a
+                # generic /state/{setting_id} topic, matching the HA discovery config.
+                await self.get_ems_mode()
+                return
             # Read back and publish the updated state
             try:
                 current_value = await self.inverter.read_setting(inverter_setting_id)
@@ -601,6 +661,31 @@ class Goodwe_MQTT:
                 "step": 1,
                 "device": device,
             },
+            # ems_mode – select
+            {
+                "component": "select",
+                "unique_id": f"{sn}_ems_mode",
+                "name": "EMS Mode",
+                "command_topic": f"{base}/set/ems_mode",
+                "state_topic": f"{base}/{self.EMS_MODE_TOPIC_POSTFIX}",
+                "value_template": "{{ value_json.ems_mode_name }}",
+                "options": list(self.EMS_MODE_OPTIONS.keys()),
+                "device": device,
+            },
+            # ems_power_limit_watts – number
+            {
+                "component": "number",
+                "unique_id": f"{sn}_ems_power_limit_watts",
+                "name": "EMS Power Limit",
+                "command_topic": f"{base}/set/ems_power_limit_watts",
+                "state_topic": f"{base}/{self.EMS_MODE_TOPIC_POSTFIX}",
+                "value_template": "{{ value_json.ems_power_limit_watts }}",
+                "unit_of_measurement": "W",
+                "min": self.EMS_POWER_LIMIT_MIN_WATTS,
+                "max": self.EMS_POWER_LIMIT_MAX_WATTS,
+                "step": 100,
+                "device": device,
+            },
         ]
 
         for entity in entities:
@@ -640,6 +725,37 @@ class Goodwe_MQTT:
             self.requested_grid_export_limit = requested_grid_export_limit
         except Exception as e:
             log.error(f'set_grid_export_limit {self.serial_number} failed: {e}')
+
+    async def get_ems_mode(self) -> None:
+        """Reads the EMS mode and power limit from the inverter and publishes to MQTT."""
+        try:
+            ems_mode = await self.inverter.get_ems_mode()
+            power_limit = await self.inverter.read_setting("ems_power_limit")
+            payload = {
+                "ems_mode": ems_mode.value if ems_mode else None,
+                "ems_mode_name": ems_mode.name if ems_mode else None,
+                "ems_power_limit_watts": power_limit,
+                "serial_number": self.serial_number,
+                "last_seen": get_timezone_aware_local_time().isoformat(),
+            }
+            await self.send_mqtt_response(self.ems_mode_topic, payload)
+            log.info(f'get_ems_mode {self.serial_number}: mode={ems_mode} limit={power_limit}W')
+        except Exception as e:
+            log.error(f'get_ems_mode {self.serial_number} failed: {e}')
+
+    async def set_ems_mode(self, ems_mode: EMSMode, power_limit_watts: Optional[int] = None) -> None:
+        """Writes the EMS mode (and optional power limit) to the inverter, then reads back.
+
+        Args:
+            ems_mode: The EMS mode to set.
+            power_limit_watts: Optional power setpoint in Watts.
+        """
+        try:
+            await self.inverter.set_ems_mode(ems_mode, power_limit_watts)
+            log.info(f'set_ems_mode {self.serial_number}: mode={ems_mode} limit={power_limit_watts}W')
+            await self.get_ems_mode()
+        except Exception as e:
+            log.error(f'set_ems_mode {self.serial_number} failed: {e}')
 
     async def get_ongrid_battery_dod(self) -> None:
         """Reads the on-grid battery Depth of Discharge (DoD) from the inverter."""
