@@ -118,8 +118,13 @@ not pass such names through.)
 | `setting_id` | Description | Payload type | Valid values |
 |---|---|---|---|
 | `work_mode` | Operation mode | string or integer | `"General mode"` (0), `"Off grid mode"` (1), `"Backup mode"` (2), `"Eco mode"` (4) |
-| `battery_charge_current_amps` | Max battery charge current | integer | 0 – 25 (A) |
-| `battery_discharge_current_amps` | Max battery discharge current | integer | 0 – 25 (A) |
+| `battery_charge_current_limit_amps` | Battery charge current **limit** (a setting, not the measured current) | number, 0.1 A steps | 0 – 25 (A) |
+| `battery_discharge_current_limit_amps` | Battery discharge current **limit** | number, 0.1 A steps | 0 – 25 (A) |
+
+`battery_charge_current_amps`, the old name of the charge limit, is still accepted on `/set/` and
+`/get/`; the state is then published under both names. The inverter stores the current limits in
+tenths of an amp (e.g. 18.5 A), so decimals are accepted and rounded to 0.1 A; the watt settings
+take whole numbers.
 | `grid_export_limit_watts` | Grid export power limit | integer | 0 – 10000 (W) |
 | `ems_mode` | EMS mode | string (name) or integer | `"BATTERY_STANDBY"`, `8`, etc. (see EMS Mode values above) |
 | `ems_power_limit_watts` | EMS power setpoint | integer | 0 – 15000 (W) |
@@ -133,8 +138,8 @@ mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/work_mode -m "Eco mode"
 # Set grid export limit to 5000 W
 mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/grid_export_limit_watts -m "5000"
 
-# Set battery charge current to 10 A
-mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/battery_charge_current_amps -m "10"
+# Set the battery charge current limit to 10 A
+mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/battery_charge_current_limit_amps -m "10"
 
 # Set EMS mode to BATTERY_STANDBY (by name or raw integer)
 mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/ems_mode -m "BATTERY_STANDBY"
@@ -151,16 +156,16 @@ mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/ems_power_limit_watts -m "3
 as after a write. Use it to learn the current value before changing it, e.g. to restore it later:
 
 ```bash
-mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/get/battery_charge_current_amps -n
-mosquitto_sub -h localhost -t goodwe2mqtt/SERIAL/state/battery_charge_current_amps -C 1
+mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/get/battery_charge_current_limit_amps -n
+mosquitto_sub -h localhost -t goodwe2mqtt/SERIAL/state/battery_charge_current_limit_amps -C 1
 ```
 
 The state topic payload is a JSON object:
 ```json
 {"work_mode": 4}
 {"grid_export_limit_watts": 5000}
-{"battery_charge_current_amps": 10}
-{"battery_discharge_current_amps": 18}
+{"battery_charge_current_limit_amps": 10.0}
+{"battery_discharge_current_limit_amps": 18.5}
 ```
 
 > **Note:** `ems_mode` and `ems_power_limit_watts` are the exception — writes to
@@ -179,8 +184,8 @@ entities appear automatically in Home Assistant.
 | Entity | HA Component | Discovery topic |
 |---|---|---|
 | Operation Mode | `select` | `homeassistant/select/<serial>_work_mode/config` |
-| Battery Charge Current | `number` | `homeassistant/number/<serial>_battery_charge_current_amps/config` |
-| Battery Discharge Current | `number` | `homeassistant/number/<serial>_battery_discharge_current_amps/config` |
+| Battery Charge Current Limit | `number` | `homeassistant/number/<serial>_battery_charge_current_amps/config` (unique_id kept from the old name) |
+| Battery Discharge Current Limit | `number` | `homeassistant/number/<serial>_battery_discharge_current_limit_amps/config` |
 | Grid Export Limit | `number` | `homeassistant/number/<serial>_grid_export_limit_watts/config` |
 | EMS Mode | `select` | `homeassistant/select/<serial>_ems_mode/config` |
 | EMS Power Limit | `number` | `homeassistant/number/<serial>_ems_power_limit_watts/config` |

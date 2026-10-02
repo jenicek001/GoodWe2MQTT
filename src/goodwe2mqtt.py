@@ -287,8 +287,8 @@ class Goodwe_MQTT:
     _INVERTER_SETTING_ALIAS: Dict[str, str] = {
         "work_mode": "work_mode",
         "grid_export_limit_watts": "grid_export_limit",
-        "battery_charge_current_amps": "battery_charge_current",
-        "battery_discharge_current_amps": "battery_discharge_current",
+        "battery_charge_current_limit_amps": "battery_charge_current",
+        "battery_discharge_current_limit_amps": "battery_discharge_current",
         "ems_mode": "ems_mode",
         "ems_power_limit_watts": "ems_power_limit",
     }
@@ -297,11 +297,19 @@ class Goodwe_MQTT:
     EMS_POWER_LIMIT_MIN_WATTS = 0
     EMS_POWER_LIMIT_MAX_WATTS = 15000
 
+    # Older names still accepted on /set/ and /get/; state is published under both names
+    _DEPRECATED_SETTING_NAMES: Dict[str, str] = {
+        "battery_charge_current_amps": "battery_charge_current_limit_amps",
+    }
+
+    # Settings held in tenths of an amp by the inverter; all other numeric settings are whole numbers
+    _DECIMAL_SETTINGS = ("battery_charge_current_limit_amps", "battery_discharge_current_limit_amps")
+
     # Inclusive value range of each numeric setting
     _SETTING_RANGES: Dict[str, tuple[int, int]] = {
         "grid_export_limit_watts": (0, 10000),
-        "battery_charge_current_amps": (0, 25),
-        "battery_discharge_current_amps": (0, 25),
+        "battery_charge_current_limit_amps": (0, 25),
+        "battery_discharge_current_limit_amps": (0, 25),
         "ems_power_limit_watts": (EMS_POWER_LIMIT_MIN_WATTS, EMS_POWER_LIMIT_MAX_WATTS),
     }
 
@@ -577,8 +585,10 @@ class Goodwe_MQTT:
         """
         log.info(f'handle_set_message {self.serial_number} setting_id={setting_id} payload={payload_str}')
         payload_str = payload_str.strip()
+        requested_id = setting_id
+        setting_id = self._DEPRECATED_SETTING_NAMES.get(setting_id, setting_id)
         if setting_id not in self._INVERTER_SETTING_ALIAS:
-            log.error(f'handle_set_message {self.serial_number} rejected: {setting_id!r} is not a writable setting')
+            log.error(f'handle_set_message {self.serial_number} rejected: {requested_id!r} is not a writable setting')
             return
         inverter_setting_id = self._INVERTER_SETTING_ALIAS[setting_id]
 
@@ -610,7 +620,10 @@ class Goodwe_MQTT:
                 return
         else:
             try:
-                value = int(payload_str)
+                if setting_id in self._DECIMAL_SETTINGS:
+                    value = round(float(payload_str), 1)   # NaN fails the range check below
+                else:
+                    value = int(payload_str)
             except ValueError:
                 log.error(f'handle_set_message {self.serial_number} invalid {setting_id} value: {payload_str}')
                 return
@@ -621,19 +634,22 @@ class Goodwe_MQTT:
 
         success = await self.write_setting(inverter_setting_id, value)
         if success:
-            await self.publish_setting_state(setting_id)
+            await self.publish_setting_state(setting_id, requested_id)
 
     async def handle_get_message(self, setting_id: str) -> None:
         """Handles a message on a /get/{setting_id} topic: reads the setting from the inverter and
         publishes it on its state topic, exactly as after a write."""
         log.info(f'handle_get_message {self.serial_number} setting_id={setting_id}')
+        requested_id = setting_id
+        setting_id = self._DEPRECATED_SETTING_NAMES.get(setting_id, setting_id)
         if setting_id not in self._INVERTER_SETTING_ALIAS:
-            log.error(f'handle_get_message {self.serial_number} rejected: {setting_id!r} is not a readable setting')
+            log.error(f'handle_get_message {self.serial_number} rejected: {requested_id!r} is not a readable setting')
             return
-        await self.publish_setting_state(setting_id)
+        await self.publish_setting_state(setting_id, requested_id)
 
-    async def publish_setting_state(self, setting_id: str) -> None:
-        """Reads an allowlisted setting back from the inverter and publishes it."""
+    async def publish_setting_state(self, setting_id: str, requested_id: Optional[str] = None) -> None:
+        """Reads an allowlisted setting back from the inverter and publishes it, also under the
+        deprecated name it was requested by, if any."""
         if setting_id in ('ems_mode', 'ems_power_limit_watts'):
             # Publish the combined EMS mode + power limit state topic instead of a
             # generic /state/{setting_id} topic, matching the HA discovery config.
@@ -641,8 +657,8 @@ class Goodwe_MQTT:
             return
         try:
             current_value = await self.inverter.read_setting(self._INVERTER_SETTING_ALIAS[setting_id])
-            state_topic = f'{self.mqtt_state_topic_prefix}/{setting_id}'
-            await self.send_mqtt_response(state_topic, {setting_id: current_value})
+            for name in dict.fromkeys((setting_id, requested_id or setting_id)):
+                await self.send_mqtt_response(f'{self.mqtt_state_topic_prefix}/{name}', {name: current_value})
             log.info(f'publish_setting_state {self.serial_number} published state {setting_id}={current_value}')
         except Exception as e:
             log.error(f'publish_setting_state {self.serial_number} read failed for {setting_id}: {e}')
@@ -670,32 +686,33 @@ class Goodwe_MQTT:
                 "options": list(self.WORK_MODE_OPTIONS.keys()),
                 "device": device,
             },
-            # battery_charge_current_amps – number
+            # battery_charge_current_limit_amps – number (unique_id kept from the old name, so the
+            # Home Assistant entity and its history survive the rename)
             {
                 "component": "number",
                 "unique_id": f"{sn}_battery_charge_current_amps",
-                "name": "Battery Charge Current",
-                "command_topic": f"{base}/set/battery_charge_current_amps",
-                "state_topic": f"{base}/state/battery_charge_current_amps",
-                "value_template": "{{ value_json.battery_charge_current_amps }}",
+                "name": "Battery Charge Current Limit",
+                "command_topic": f"{base}/set/battery_charge_current_limit_amps",
+                "state_topic": f"{base}/state/battery_charge_current_limit_amps",
+                "value_template": "{{ value_json.battery_charge_current_limit_amps }}",
                 "unit_of_measurement": "A",
                 "min": 0,
                 "max": 25,
-                "step": 1,
+                "step": 0.1,
                 "device": device,
             },
-            # battery_discharge_current_amps – number
+            # battery_discharge_current_limit_amps – number
             {
                 "component": "number",
-                "unique_id": f"{sn}_battery_discharge_current_amps",
-                "name": "Battery Discharge Current",
-                "command_topic": f"{base}/set/battery_discharge_current_amps",
-                "state_topic": f"{base}/state/battery_discharge_current_amps",
-                "value_template": "{{ value_json.battery_discharge_current_amps }}",
+                "unique_id": f"{sn}_battery_discharge_current_limit_amps",
+                "name": "Battery Discharge Current Limit",
+                "command_topic": f"{base}/set/battery_discharge_current_limit_amps",
+                "state_topic": f"{base}/state/battery_discharge_current_limit_amps",
+                "value_template": "{{ value_json.battery_discharge_current_limit_amps }}",
                 "unit_of_measurement": "A",
                 "min": 0,
                 "max": 25,
-                "step": 1,
+                "step": 0.1,
                 "device": device,
             },
             # grid_export_limit_watts – number

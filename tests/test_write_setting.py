@@ -120,8 +120,8 @@ async def test_handle_set_message_battery_charge_current_amps_alias():
          patch.object(gw, "send_mqtt_response", new_callable=AsyncMock) as mock_pub:
         await gw.handle_set_message("battery_charge_current_amps", "10")
 
-    mock_write.assert_awaited_once_with("battery_charge_current", 10)
-    mock_pub.assert_awaited_once_with(
+    mock_write.assert_awaited_once_with("battery_charge_current", 10.0)
+    mock_pub.assert_any_await(
         "goodwe2mqtt/TEST_SN/state/battery_charge_current_amps",
         {"battery_charge_current_amps": 10},
     )
@@ -258,7 +258,7 @@ async def test_publish_ha_discovery_publishes_six_entities():
     topics = [c.args[0] for c in mock_pub.call_args_list]
     assert "homeassistant/select/TEST_SN_work_mode/config" in topics
     assert "homeassistant/number/TEST_SN_battery_charge_current_amps/config" in topics
-    assert "homeassistant/number/TEST_SN_battery_discharge_current_amps/config" in topics
+    assert "homeassistant/number/TEST_SN_battery_discharge_current_limit_amps/config" in topics
     assert "homeassistant/number/TEST_SN_grid_export_limit_watts/config" in topics
     assert "homeassistant/select/TEST_SN_ems_mode/config" in topics
     assert "homeassistant/number/TEST_SN_ems_power_limit_watts/config" in topics
