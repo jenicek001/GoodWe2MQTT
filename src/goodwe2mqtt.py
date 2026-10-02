@@ -260,6 +260,8 @@ class Goodwe_MQTT:
         self.mqtt_control_topic = f'{mqtt_topic}/{mqtt_control_topic_postfix}'
         self.mqtt_set_topic_prefix = f'{mqtt_topic}/set'
         self.mqtt_set_topic_wildcard = f'{mqtt_topic}/set/+'
+        self.mqtt_get_topic_prefix = f'{mqtt_topic}/get'
+        self.mqtt_get_topic_wildcard = f'{mqtt_topic}/get/+'
         self.mqtt_state_topic_prefix = f'{mqtt_topic}/state'
         self.mqtt_runtime_data_topic = f'{mqtt_topic}/{mqtt_runtime_data_topic_postfix}'
         self.mqtt_runtime_data_interval_seconds = timedelta(seconds=mqtt_runtime_data_interval_seconds)
@@ -279,12 +281,28 @@ class Goodwe_MQTT:
         self.mqtt_task = asyncio.ensure_future(self.mqtt_client_task())
         self.heartbeat_task_ref = asyncio.ensure_future(self.heartbeat_task())
 
-    # Maps MQTT setting names → goodwe library setting IDs
+    # Maps MQTT setting names → goodwe library setting IDs. This is also the allowlist: /set/ and
+    # /get/ accept these names only. The goodwe library itself writes any setting it knows and,
+    # under the name "modbus<register>", any raw register, so nothing else may reach it.
     _INVERTER_SETTING_ALIAS: Dict[str, str] = {
+        "work_mode": "work_mode",
         "grid_export_limit_watts": "grid_export_limit",
         "battery_charge_current_amps": "battery_charge_current",
+        "battery_discharge_current_amps": "battery_discharge_current",
         "ems_mode": "ems_mode",
         "ems_power_limit_watts": "ems_power_limit",
+    }
+
+    # Minimum/maximum allowed EMS power limit (Watts)
+    EMS_POWER_LIMIT_MIN_WATTS = 0
+    EMS_POWER_LIMIT_MAX_WATTS = 15000
+
+    # Inclusive value range of each numeric setting
+    _SETTING_RANGES: Dict[str, tuple[int, int]] = {
+        "grid_export_limit_watts": (0, 10000),
+        "battery_charge_current_amps": (0, 25),
+        "battery_discharge_current_amps": (0, 25),
+        "ems_power_limit_watts": (EMS_POWER_LIMIT_MIN_WATTS, EMS_POWER_LIMIT_MAX_WATTS),
     }
 
     # Postfix for the combined EMS mode + power limit state topic
@@ -293,9 +311,6 @@ class Goodwe_MQTT:
     # EMS mode name → integer value mapping (from goodwe.inverter.EMSMode)
     EMS_MODE_OPTIONS: Dict[str, int] = {m.name: m.value for m in EMSMode}
 
-    # Minimum/maximum allowed EMS power limit (Watts)
-    EMS_POWER_LIMIT_MIN_WATTS = 0
-    EMS_POWER_LIMIT_MAX_WATTS = 15000
 
     def __str__(self) -> str:
         interval_rt = int(self.mqtt_runtime_data_interval_seconds.total_seconds())
@@ -391,6 +406,7 @@ class Goodwe_MQTT:
                     log.info(f'mqtt_client_task {self.serial_number} connected to MQTT broker')
                     await client.subscribe(self.mqtt_control_topic)
                     await client.subscribe(self.mqtt_set_topic_wildcard)
+                    await client.subscribe(self.mqtt_get_topic_wildcard)
                     async for message in client.messages:
                         log.info(f'mqtt_client_task {self.serial_number} message received')
                         topic_str = str(message.topic)
@@ -406,6 +422,12 @@ class Goodwe_MQTT:
                         if topic_str.startswith(set_prefix):
                             setting_id = topic_str[len(set_prefix):]
                             await self.handle_set_message(setting_id, message_payload)
+                            continue
+
+                        # Handle /get/{setting_id} messages (the payload is ignored)
+                        get_prefix = f'{self.mqtt_get_topic_prefix}/'
+                        if topic_str.startswith(get_prefix):
+                            await self.handle_get_message(topic_str[len(get_prefix):])
                             continue
 
                         try:
@@ -555,18 +577,25 @@ class Goodwe_MQTT:
         """
         log.info(f'handle_set_message {self.serial_number} setting_id={setting_id} payload={payload_str}')
         payload_str = payload_str.strip()
-        inverter_setting_id = self._INVERTER_SETTING_ALIAS.get(setting_id, setting_id)
+        if setting_id not in self._INVERTER_SETTING_ALIAS:
+            log.error(f'handle_set_message {self.serial_number} rejected: {setting_id!r} is not a writable setting')
+            return
+        inverter_setting_id = self._INVERTER_SETTING_ALIAS[setting_id]
 
         # Determine the value to write
+        value: Any
         if setting_id == 'work_mode':
             if payload_str in self.WORK_MODE_OPTIONS:
-                value: Any = self.WORK_MODE_OPTIONS[payload_str]
+                value = self.WORK_MODE_OPTIONS[payload_str]
             else:
                 try:
                     value = int(payload_str)
                 except ValueError:
                     log.error(f'handle_set_message {self.serial_number} invalid work_mode value: {payload_str}')
                     return
+            if value not in self.WORK_MODE_OPTIONS.values():
+                log.error(f'handle_set_message {self.serial_number} invalid work_mode value: {payload_str}')
+                return
         elif setting_id == 'ems_mode':
             if payload_str in self.EMS_MODE_OPTIONS:
                 value = self.EMS_MODE_OPTIONS[payload_str]
@@ -581,47 +610,42 @@ class Goodwe_MQTT:
                 return
         else:
             try:
-                # Prefer integer, fall back to float, then string
                 value = int(payload_str)
             except ValueError:
-                try:
-                    value = float(payload_str)
-                except ValueError:
-                    log.warning(
-                        f'handle_set_message {self.serial_number} unexpected string payload '
-                        f'for {setting_id}: {payload_str!r}'
-                    )
-                    value = payload_str
-
-        if setting_id == 'ems_power_limit_watts':
-            try:
-                value = int(payload_str)
-            except ValueError:
-                log.error(
-                    f'handle_set_message {self.serial_number} invalid ems_power_limit_watts value: {payload_str}'
-                )
+                log.error(f'handle_set_message {self.serial_number} invalid {setting_id} value: {payload_str}')
                 return
-            if not (self.EMS_POWER_LIMIT_MIN_WATTS <= value <= self.EMS_POWER_LIMIT_MAX_WATTS):
-                log.error(
-                    f'handle_set_message {self.serial_number} ems_power_limit_watts out of range: {value}'
-                )
+            low, high = self._SETTING_RANGES[setting_id]
+            if not (low <= value <= high):
+                log.error(f'handle_set_message {self.serial_number} {setting_id} out of range {low}-{high}: {value}')
                 return
 
         success = await self.write_setting(inverter_setting_id, value)
         if success:
-            if setting_id in ('ems_mode', 'ems_power_limit_watts'):
-                # Publish the combined EMS mode + power limit state topic instead of a
-                # generic /state/{setting_id} topic, matching the HA discovery config.
-                await self.get_ems_mode()
-                return
-            # Read back and publish the updated state
-            try:
-                current_value = await self.inverter.read_setting(inverter_setting_id)
-                state_topic = f'{self.mqtt_state_topic_prefix}/{setting_id}'
-                await self.send_mqtt_response(state_topic, {setting_id: current_value})
-                log.info(f'handle_set_message {self.serial_number} published state {setting_id}={current_value}')
-            except Exception as e:
-                log.error(f'handle_set_message {self.serial_number} read-back failed for {setting_id}: {e}')
+            await self.publish_setting_state(setting_id)
+
+    async def handle_get_message(self, setting_id: str) -> None:
+        """Handles a message on a /get/{setting_id} topic: reads the setting from the inverter and
+        publishes it on its state topic, exactly as after a write."""
+        log.info(f'handle_get_message {self.serial_number} setting_id={setting_id}')
+        if setting_id not in self._INVERTER_SETTING_ALIAS:
+            log.error(f'handle_get_message {self.serial_number} rejected: {setting_id!r} is not a readable setting')
+            return
+        await self.publish_setting_state(setting_id)
+
+    async def publish_setting_state(self, setting_id: str) -> None:
+        """Reads an allowlisted setting back from the inverter and publishes it."""
+        if setting_id in ('ems_mode', 'ems_power_limit_watts'):
+            # Publish the combined EMS mode + power limit state topic instead of a
+            # generic /state/{setting_id} topic, matching the HA discovery config.
+            await self.get_ems_mode()
+            return
+        try:
+            current_value = await self.inverter.read_setting(self._INVERTER_SETTING_ALIAS[setting_id])
+            state_topic = f'{self.mqtt_state_topic_prefix}/{setting_id}'
+            await self.send_mqtt_response(state_topic, {setting_id: current_value})
+            log.info(f'publish_setting_state {self.serial_number} published state {setting_id}={current_value}')
+        except Exception as e:
+            log.error(f'publish_setting_state {self.serial_number} read failed for {setting_id}: {e}')
 
     async def publish_ha_discovery(self) -> None:
         """Publishes Home Assistant MQTT Discovery payloads for controllable entities."""
@@ -654,6 +678,20 @@ class Goodwe_MQTT:
                 "command_topic": f"{base}/set/battery_charge_current_amps",
                 "state_topic": f"{base}/state/battery_charge_current_amps",
                 "value_template": "{{ value_json.battery_charge_current_amps }}",
+                "unit_of_measurement": "A",
+                "min": 0,
+                "max": 25,
+                "step": 1,
+                "device": device,
+            },
+            # battery_discharge_current_amps – number
+            {
+                "component": "number",
+                "unique_id": f"{sn}_battery_discharge_current_amps",
+                "name": "Battery Discharge Current",
+                "command_topic": f"{base}/set/battery_discharge_current_amps",
+                "state_topic": f"{base}/state/battery_discharge_current_amps",
+                "value_template": "{{ value_json.battery_discharge_current_amps }}",
                 "unit_of_measurement": "A",
                 "min": 0,
                 "max": 25,
@@ -765,6 +803,10 @@ class Goodwe_MQTT:
         """
         try:
             await self.inverter.set_ems_mode(ems_mode, power_limit_watts)
+            if power_limit_watts == 0:
+                # goodwe 0.4.10 writes the limit only when it is truthy, so a 0 would leave the
+                # previous setpoint in force.
+                await self.inverter.write_setting("ems_power_limit", 0)
             log.info(f'set_ems_mode {self.serial_number}: mode={ems_mode} limit={power_limit_watts}W')
             await self.get_ems_mode()
         except Exception as e:

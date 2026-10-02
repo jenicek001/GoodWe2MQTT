@@ -247,17 +247,18 @@ async def test_mqtt_client_task_routes_set_message():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_publish_ha_discovery_publishes_five_entities():
-    """publish_ha_discovery should publish configs for all five entities."""
+async def test_publish_ha_discovery_publishes_six_entities():
+    """publish_ha_discovery should publish configs for all six entities."""
     gw = make_gw()
 
     with patch.object(gw, "send_mqtt_response", new_callable=AsyncMock) as mock_pub:
         await gw.publish_ha_discovery()
 
-    assert mock_pub.await_count == 5
+    assert mock_pub.await_count == 6
     topics = [c.args[0] for c in mock_pub.call_args_list]
     assert "homeassistant/select/TEST_SN_work_mode/config" in topics
     assert "homeassistant/number/TEST_SN_battery_charge_current_amps/config" in topics
+    assert "homeassistant/number/TEST_SN_battery_discharge_current_amps/config" in topics
     assert "homeassistant/number/TEST_SN_grid_export_limit_watts/config" in topics
     assert "homeassistant/select/TEST_SN_ems_mode/config" in topics
     assert "homeassistant/number/TEST_SN_ems_power_limit_watts/config" in topics

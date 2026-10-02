@@ -279,13 +279,13 @@ async def test_handle_set_message_ems_mode_write_failure_no_republish():
 
 @pytest.mark.asyncio
 async def test_publish_ha_discovery_includes_ems_entities():
-    """publish_ha_discovery should publish five entities including the EMS ones."""
+    """publish_ha_discovery should publish six entities including the EMS ones."""
     gw = make_gw()
 
     with patch.object(gw, "send_mqtt_response", new_callable=AsyncMock) as mock_pub:
         await gw.publish_ha_discovery()
 
-    assert mock_pub.await_count == 5
+    assert mock_pub.await_count == 6
     topics = [c.args[0] for c in mock_pub.call_args_list]
     assert "homeassistant/select/TEST_SN_ems_mode/config" in topics
     assert "homeassistant/number/TEST_SN_ems_power_limit_watts/config" in topics
