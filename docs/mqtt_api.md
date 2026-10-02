@@ -110,12 +110,16 @@ the setting back and publishes the confirmed value on the matching state topic.
 **Command Topic:** `goodwe2mqtt/<serial>/set/<setting_id>`  
 **State Topic:**   `goodwe2mqtt/<serial>/state/<setting_id>`
 
-Supported settings:
+Supported settings - **only these**. Any other `setting_id` is rejected and logged, and so is a
+value outside its range; nothing is written. (The goodwe library underneath would write any
+setting it knows, and any raw Modbus register under the name `modbus<register>`; the bridge does
+not pass such names through.)
 
 | `setting_id` | Description | Payload type | Valid values |
 |---|---|---|---|
 | `work_mode` | Operation mode | string or integer | `"General mode"` (0), `"Off grid mode"` (1), `"Backup mode"` (2), `"Eco mode"` (4) |
 | `battery_charge_current_amps` | Max battery charge current | integer | 0 – 25 (A) |
+| `battery_discharge_current_amps` | Max battery discharge current | integer | 0 – 25 (A) |
 | `grid_export_limit_watts` | Grid export power limit | integer | 0 – 10000 (W) |
 | `ems_mode` | EMS mode | string (name) or integer | `"BATTERY_STANDBY"`, `8`, etc. (see EMS Mode values above) |
 | `ems_power_limit_watts` | EMS power setpoint | integer | 0 – 15000 (W) |
@@ -140,11 +144,23 @@ mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/ems_mode -m "8"
 mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/set/ems_power_limit_watts -m "3000"
 ```
 
+### Reading a setting (`/get/` topics)
+
+**Topic:** `goodwe2mqtt/<serial>/get/<setting_id>` (payload ignored), for the same settings as
+`/set/`. The daemon reads the setting from the inverter and publishes it on the state topic, exactly
+as after a write. Use it to learn the current value before changing it, e.g. to restore it later:
+
+```bash
+mosquitto_pub -h localhost -t goodwe2mqtt/SERIAL/get/battery_charge_current_amps -n
+mosquitto_sub -h localhost -t goodwe2mqtt/SERIAL/state/battery_charge_current_amps -C 1
+```
+
 The state topic payload is a JSON object:
 ```json
 {"work_mode": 4}
 {"grid_export_limit_watts": 5000}
 {"battery_charge_current_amps": 10}
+{"battery_discharge_current_amps": 18}
 ```
 
 > **Note:** `ems_mode` and `ems_power_limit_watts` are the exception — writes to
@@ -164,6 +180,7 @@ entities appear automatically in Home Assistant.
 |---|---|---|
 | Operation Mode | `select` | `homeassistant/select/<serial>_work_mode/config` |
 | Battery Charge Current | `number` | `homeassistant/number/<serial>_battery_charge_current_amps/config` |
+| Battery Discharge Current | `number` | `homeassistant/number/<serial>_battery_discharge_current_amps/config` |
 | Grid Export Limit | `number` | `homeassistant/number/<serial>_grid_export_limit_watts/config` |
 | EMS Mode | `select` | `homeassistant/select/<serial>_ems_mode/config` |
 | EMS Power Limit | `number` | `homeassistant/number/<serial>_ems_power_limit_watts/config` |

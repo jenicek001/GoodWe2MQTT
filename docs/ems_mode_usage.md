@@ -52,6 +52,16 @@ battery and grid interact from second to second (e.g. "hold export at exactly
 `ems_power_limit_watts` accepts **0 – 15000 W** and is only meaningful for the
 modes listed above (ignored otherwise).
 
+A limit of **0 is written explicitly**: goodwe 0.4.10's `set_ems_mode` skips the power limit when it
+is 0, which would leave the previous setpoint in force, so the bridge writes the 0 itself.
+
+> **Reading `ems_mode` in self-use.** In General mode, with no EMS mode written for weeks, two
+> GW10K-ET inverters have been observed to report
+> their *momentary internal decision* in the EMS registers: `CHARGE_BATTERY` with the battery's
+> charge power as the limit while there is PV surplus, `DISCHARGE_PV` in the evening, switching
+> many times a day with no command sent. Do not take a read-back as the stored command, and do not
+> "restore" a read-back value: write the intended mode explicitly.
+
 ---
 
 ## How to Set EMS Mode
