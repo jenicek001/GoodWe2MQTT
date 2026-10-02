@@ -125,6 +125,12 @@ not pass such names through.)
 `/get/`; the state is then published under both names. The inverter stores the current limits in
 tenths of an amp (e.g. 18.5 A), so decimals are accepted and rounded to 0.1 A; the watt settings
 take whole numbers.
+
+> **A current limit read back is the *effective* limit, not the configured one.** The inverter caps
+> it with what the battery's BMS allows: a battery that accepts at most 18.5 A reads 18.5 A after
+> 25 A is written, and the value falls to 0 A as the battery approaches its discharge safety limit.
+> Do not save a read-back value to restore it later: restoring a 0 read near an empty battery would
+> block discharging. Restore the configured value you intend (e.g. 25 A).
 | `grid_export_limit_watts` | Grid export power limit | integer | 0 – 10000 (W) |
 | `ems_mode` | EMS mode | string (name) or integer | `"BATTERY_STANDBY"`, `8`, etc. (see EMS Mode values above) |
 | `ems_power_limit_watts` | EMS power setpoint | integer | 0 – 15000 (W) |
