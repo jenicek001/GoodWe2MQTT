@@ -97,7 +97,7 @@ logged as an error without affecting the inverter.
 | 11 | `CHARGE_BATTERY` | Force charge at `ems_power_limit_watts` W | Target charge W |
 | 12 | `DISCHARGE_BATTERY` | Force discharge at `ems_power_limit_watts` W | Target discharge W |
 
-EMS mode is only meaningful when `work_mode` is General (0) or ECO (4).
+EMS mode is only meaningful when `work_mode` is General (0) or ECO (3).
 
 ---
 
@@ -117,7 +117,7 @@ not pass such names through.)
 
 | `setting_id` | Description | Payload type | Valid values |
 |---|---|---|---|
-| `work_mode` | Operation mode | string or integer | `"General mode"` (0), `"Off grid mode"` (1), `"Backup mode"` (2), `"Eco mode"` (4) |
+| `work_mode` | Operation mode | string or integer | `"General mode"` (0), `"Off grid mode"` (1), `"Backup mode"` (2), `"Eco mode"` (3) - set through the goodwe library's full mode switch, see below |
 | `battery_charge_current_limit_amps` | Battery charge current **limit** (a setting, not the measured current) | number, 0.1 A steps | 0 – 25 (A) |
 | `battery_discharge_current_limit_amps` | Battery discharge current **limit** | number, 0.1 A steps | 0 – 25 (A) |
 
@@ -134,6 +134,12 @@ take whole numbers.
 | `grid_export_limit_watts` | Grid export power limit | integer | 0 – 10000 (W) |
 | `ems_mode` | EMS mode | string (name) or integer | `"BATTERY_STANDBY"`, `8`, etc. (see EMS Mode values above) |
 | `ems_power_limit_watts` | EMS power setpoint | integer | 0 – 15000 (W) |
+
+> **`work_mode` is never a raw register write.** goodwe2mqtt calls the goodwe library's
+> `set_operation_mode`, which for General mode also resets the EMS mode to AUTO with a power limit
+> of 0 (registers 47511/47512) and the battery mode parameter (47533). Writing register 47000 alone
+> once left two GW10K-ET inverters charging their batteries from the grid at 10.6 kW (#18). The
+> numbers are the library's `OperationMode` values; 4 (peak shaving) and 5 (self-use) are not offered.
 
 **Examples:**
 
@@ -168,7 +174,7 @@ mosquitto_sub -h localhost -t goodwe2mqtt/SERIAL/state/battery_charge_current_li
 
 The state topic payload is a JSON object:
 ```json
-{"work_mode": 4}
+{"work_mode": 3}
 {"grid_export_limit_watts": 5000}
 {"battery_charge_current_limit_amps": 10.0}
 {"battery_discharge_current_limit_amps": 18.5}

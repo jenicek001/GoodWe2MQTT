@@ -58,8 +58,10 @@ async def test_set_rejects_settings_outside_allowlist(setting_id):
     ("battery_discharge_current_limit_amps", "abc"),
     ("grid_export_limit_watts", "10001"),
     ("grid_export_limit_watts", "-5"),
-    ("work_mode", "3"),       # not a known work mode
+    ("work_mode", "4"),       # PEAK_SHAVING in goodwe 0.4.10 - was mapped to "Eco mode" (#18)
+    ("work_mode", "5"),
     ("work_mode", "7"),
+    ("work_mode", "Peak shaving"),
 ])
 async def test_set_rejects_out_of_range_values(setting_id, payload):
     gw = make_gw()
@@ -340,3 +342,47 @@ async def test_ha_entities_are_named_as_limits():
     assert charge["state_topic"] == "goodwe2mqtt/TEST_SN/state/battery_charge_current_limit_amps"
     assert charge["value_template"] == "{{ value_json.battery_charge_current_limit_amps }}"
     assert (charge["step"], discharge["step"]) == (0.1, 0.1)
+
+
+# ---------------------------------------------------------------------------
+# work_mode through the library (#18)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload,mode_name", [("General mode", "GENERAL"), ("0", "GENERAL"),
+                                               ("Off grid mode", "OFF_GRID"), ("Backup mode", "BACKUP"),
+                                               ("Eco mode", "ECO"), ("3", "ECO")])
+async def test_work_mode_uses_the_library_mode_switch(payload, mode_name):
+    from goodwe.inverter import OperationMode
+    gw = make_gw()
+    gw.inverter = AsyncMock()
+    gw.inverter.read_setting = AsyncMock(return_value=OperationMode[mode_name].value)
+    with patch.object(gw, "send_mqtt_response", new_callable=AsyncMock) as mock_pub:
+        await gw.handle_set_message("work_mode", payload)
+    gw.inverter.set_operation_mode.assert_awaited_once_with(OperationMode[mode_name])
+    gw.inverter.write_setting.assert_not_awaited()                # never the raw register
+    mock_pub.assert_awaited_once_with("goodwe2mqtt/TEST_SN/state/work_mode",
+                                      {"work_mode": OperationMode[mode_name].value})
+
+
+@pytest.mark.asyncio
+async def test_work_mode_switch_is_retried_and_failure_publishes_nothing():
+    gw = make_gw()
+    gw.inverter = AsyncMock()
+    gw.inverter.set_operation_mode.side_effect = Exception("timeout")
+    with patch("asyncio.sleep", new_callable=AsyncMock), \
+         patch.object(gw, "send_mqtt_response", new_callable=AsyncMock) as mock_pub:
+        await gw.handle_set_message("work_mode", "General mode")
+    assert gw.inverter.set_operation_mode.await_count == 3
+    mock_pub.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ha_work_mode_options_are_the_library_modes():
+    gw = make_gw()
+    with patch.object(gw, "send_mqtt_response", new_callable=AsyncMock) as mock_pub:
+        await gw.publish_ha_discovery()
+    payloads = {c.args[0]: c.args[1] for c in mock_pub.call_args_list}
+    options = payloads["homeassistant/select/TEST_SN_work_mode/config"]["options"]
+    assert options == ["General mode", "Off grid mode", "Backup mode", "Eco mode"]
+    assert goodwe2mqtt.Goodwe_MQTT.WORK_MODE_OPTIONS["Eco mode"] == 3

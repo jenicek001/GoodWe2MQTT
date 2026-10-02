@@ -4,10 +4,10 @@ This guide explains how to use GoodWe2MQTT's **EMS mode** control to fine-tune
 battery charge/discharge and grid import/export behaviour on GoodWe ET
 inverters.
 
-> ⚠️ **Prerequisite: `work_mode` must be `General mode` (0) or `Eco mode` (4)**
+> ⚠️ **Prerequisite: `work_mode` must be `General mode` (0) or `Eco mode` (3)**
 >
 > EMS mode is only honoured by the inverter when the general **work mode**
-> (register `47000`) is set to `General mode` (0) or `Eco mode` (4).
+> (register `47000`) is set to `General mode` (0) or `Eco mode` (3).
 > If the inverter is in `Off grid mode` (1) or `Backup mode` (2), EMS mode
 > settings are ignored and behaviour is undefined — **always set `work_mode`
 > first**, then set `ems_mode`.
@@ -158,7 +158,7 @@ they always reflect the latest confirmed mode/limit together.
 
 - **EMS mode changes have no effect** — check `work_mode` first
   (`goodwe2mqtt/SERIAL/operation_mode`); it must be `General mode` (0) or
-  `Eco mode` (4).
+  `Eco mode` (3).
 - **`ems_mode` in the published state is `null`** — the inverter returned an
   unrecognised value for the `ems_mode` register; this can happen on older
   firmware that does not support EMS mode. Check the daemon logs for details.
