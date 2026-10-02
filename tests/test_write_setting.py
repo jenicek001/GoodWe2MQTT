@@ -129,21 +129,24 @@ async def test_handle_set_message_battery_charge_current_amps_alias():
 
 @pytest.mark.asyncio
 async def test_handle_set_message_work_mode_by_name():
-    """handle_set_message should map work_mode string to integer before writing."""
+    """A work mode goes through the library's full mode switch, never a raw register write (#18)."""
+    from goodwe.inverter import OperationMode
     gw = make_gw()
     gw.inverter = AsyncMock()
-    gw.inverter.read_setting = AsyncMock(return_value=4)
+    gw.inverter.read_setting = AsyncMock(return_value=3)
 
     with patch.object(gw, "write_setting", new_callable=AsyncMock, return_value=True) as mock_write, \
          patch.object(gw, "send_mqtt_response", new_callable=AsyncMock):
         await gw.handle_set_message("work_mode", "Eco mode")
 
-    mock_write.assert_awaited_once_with("work_mode", 4)
+    gw.inverter.set_operation_mode.assert_awaited_once_with(OperationMode.ECO)
+    mock_write.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_handle_set_message_work_mode_by_integer():
-    """handle_set_message should accept a numeric string for work_mode."""
+    """A numeric work mode is the library's OperationMode value; General is the full command."""
+    from goodwe.inverter import OperationMode
     gw = make_gw()
     gw.inverter = AsyncMock()
     gw.inverter.read_setting = AsyncMock(return_value=0)
@@ -152,7 +155,8 @@ async def test_handle_set_message_work_mode_by_integer():
          patch.object(gw, "send_mqtt_response", new_callable=AsyncMock):
         await gw.handle_set_message("work_mode", "0")
 
-    mock_write.assert_awaited_once_with("work_mode", 0)
+    gw.inverter.set_operation_mode.assert_awaited_once_with(OperationMode.GENERAL)
+    mock_write.assert_not_awaited()
 
 
 @pytest.mark.asyncio

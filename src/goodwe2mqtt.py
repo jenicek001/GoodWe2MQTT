@@ -539,13 +539,32 @@ class Goodwe_MQTT:
                 log.error(f'mqtt_client_task {self.serial_number} MQTT error: {e}. Reconnecting in 5s...')
                 await asyncio.sleep(5)
 
-    # Work mode name → integer value mapping (GoodWe ET series)
+    # Work mode name → goodwe.inverter.OperationMode value. A work mode is always set through the
+    # library's set_operation_mode, never by writing register 47000 alone: General also resets the
+    # EMS mode (47511/47512) and the battery mode parameter (47533), and a bare work_mode=0 write
+    # once left two GW10K-ET inverters grid-charging at 10.6 kW (#18). 4 is PEAK_SHAVING in the
+    # library, not Eco, and is not offered.
     WORK_MODE_OPTIONS: Dict[str, int] = {
-        "General mode": 0,
-        "Off grid mode": 1,
-        "Backup mode": 2,
-        "Eco mode": 4,
+        "General mode": OperationMode.GENERAL.value,
+        "Off grid mode": OperationMode.OFF_GRID.value,
+        "Backup mode": OperationMode.BACKUP.value,
+        "Eco mode": OperationMode.ECO.value,
     }
+
+    async def set_operation_mode(self, mode: OperationMode, retries: int = 3) -> bool:
+        """The library's full mode switch, with the same retry and backoff as write_setting."""
+        for attempt in range(1, retries + 1):
+            try:
+                log.info(f'set_operation_mode {self.serial_number} attempt {attempt}/{retries}: {mode.name}')
+                await self.inverter.set_operation_mode(mode)
+                log.info(f'set_operation_mode {self.serial_number} success: {mode.name}')
+                return True
+            except Exception as e:
+                log.warning(f'set_operation_mode {self.serial_number} attempt {attempt} failed: {e}')
+                if attempt < retries:
+                    await asyncio.sleep(2 ** (attempt - 1))
+        log.error(f'set_operation_mode {self.serial_number} all {retries} attempts failed for {mode.name}')
+        return False
 
     async def write_setting(self, setting_id: str, value: Any, retries: int = 3) -> bool:
         """Writes a setting to the inverter with exponential-backoff retry logic.
@@ -606,6 +625,9 @@ class Goodwe_MQTT:
             if value not in self.WORK_MODE_OPTIONS.values():
                 log.error(f'handle_set_message {self.serial_number} invalid work_mode value: {payload_str}')
                 return
+            if await self.set_operation_mode(OperationMode(value)):
+                await self.publish_setting_state(setting_id, requested_id)
+            return
         elif setting_id == 'ems_mode':
             if payload_str in self.EMS_MODE_OPTIONS:
                 value = self.EMS_MODE_OPTIONS[payload_str]
