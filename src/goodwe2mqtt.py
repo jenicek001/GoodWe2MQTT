@@ -245,6 +245,7 @@ class Goodwe_MQTT:
         """
         self.serial_number = serial_number
         self.ip_address = ip_address
+        self._confirm_tasks: Dict[str, "asyncio.Task"] = {}   # setting -> its pending confirmation
 
         self.mqtt_broker_ip = mqtt_broker_ip
         self.mqtt_broker_port = mqtt_broker_port
@@ -292,6 +293,11 @@ class Goodwe_MQTT:
         "ems_mode": "ems_mode",
         "ems_power_limit_watts": "ems_power_limit",
     }
+
+    # A written setting is confirmed only by a read-back that matches it. A GW10K-ET applies a written battery
+    # current limit at once but can read back the old value for a while (EMS #47, 2026-10-26: 25.0 right after
+    # writing 0, 0.0 four minutes later). After a stale read-back it is re-read after these delays (s, ~3 min).
+    CONFIRM_RETRY_S = (2, 4, 8, 16, 30, 60, 60)
 
     # Minimum/maximum allowed EMS power limit (Watts)
     EMS_POWER_LIMIT_MIN_WATTS = 0
@@ -656,7 +662,67 @@ class Goodwe_MQTT:
 
         success = await self.write_setting(inverter_setting_id, value)
         if success:
-            await self.publish_setting_state(setting_id, requested_id)
+            if setting_id in ('ems_mode', 'ems_power_limit_watts'):
+                await self.publish_setting_state(setting_id, requested_id)   # their combined state topic
+            else:
+                await self.confirm_setting_state(setting_id, requested_id, value)
+
+    @staticmethod
+    def _matches(read_back: Any, written: Any) -> bool:
+        try:
+            return abs(float(read_back) - float(written)) < 0.05      # the registers hold tenths
+        except (TypeError, ValueError):
+            return read_back == written
+
+    async def _publish_state(self, setting_id: str, requested_id: Optional[str], value: Any,
+                             extra: Optional[Dict[str, Any]] = None) -> None:
+        for name in dict.fromkeys((setting_id, requested_id or setting_id)):
+            await self.send_mqtt_response(f'{self.mqtt_state_topic_prefix}/{name}', {name: value, **(extra or {})})
+
+    async def confirm_setting_state(self, setting_id: str, requested_id: Optional[str], written: Any) -> None:
+        """Publishes a written setting's state only from a read-back that matches what was written. A stale
+        read-back (the inverter applies at once, its register reads back later) is re-read in the background
+        after CONFIRM_RETRY_S; a disagreement that persists is published with the written value and logged.
+        A newer write to the same setting replaces a pending confirmation."""
+        pending = self._confirm_tasks.pop(setting_id, None)
+        if pending is not None and not pending.done():
+            pending.cancel()
+        inverter_id = self._INVERTER_SETTING_ALIAS[setting_id]
+        try:
+            read_back = await self.inverter.read_setting(inverter_id)
+        except Exception as e:
+            log.error(f'confirm_setting_state {self.serial_number} read failed for {setting_id}: {e}')
+            read_back = None
+        if read_back is not None and self._matches(read_back, written):
+            await self._publish_state(setting_id, requested_id, read_back)
+            log.info(f'publish_setting_state {self.serial_number} published state {setting_id}={read_back}')
+            return
+        log.info(f'confirm_setting_state {self.serial_number} {setting_id} reads {read_back} after writing '
+                 f'{written}; re-reading')
+        self._confirm_tasks[setting_id] = asyncio.create_task(
+            self._confirm_later(setting_id, requested_id, written, inverter_id))
+
+    async def _confirm_later(self, setting_id, requested_id, written, inverter_id) -> None:
+        read_back = None
+        try:
+            for delay in self.CONFIRM_RETRY_S:
+                await asyncio.sleep(delay)
+                try:
+                    read_back = await self.inverter.read_setting(inverter_id)
+                except Exception as e:
+                    log.error(f'confirm_setting_state {self.serial_number} read failed for {setting_id}: {e}')
+                    continue
+                if self._matches(read_back, written):
+                    await self._publish_state(setting_id, requested_id, read_back)
+                    log.info(f'publish_setting_state {self.serial_number} published state {setting_id}={read_back} '
+                             f'(confirmed after re-reading)')
+                    return
+            log.warning(f'confirm_setting_state {self.serial_number} {setting_id} still reads {read_back} after '
+                        f'writing {written}: published with the written value')
+            await self._publish_state(setting_id, requested_id, read_back, {"written": written})
+        finally:
+            if self._confirm_tasks.get(setting_id) is asyncio.current_task():
+                del self._confirm_tasks[setting_id]
 
     async def handle_get_message(self, setting_id: str) -> None:
         """Handles a message on a /get/{setting_id} topic: reads the setting from the inverter and
