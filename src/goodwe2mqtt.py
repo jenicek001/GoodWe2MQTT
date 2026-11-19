@@ -18,11 +18,19 @@ import json
 import sys
 import os
 import re
+import inspect
 from logger import log
 from goodwe.inverter import OperationMode, EMSMode
 import sec1000s_protocol
 
 config_file = ".env"
+
+# Inverter family names accepted by G2M_GOODWE_INVERTERS_<N>_FAMILY, as understood by
+# goodwe.connect(). An empty family means "let the library detect it from the serial number":
+# it matches the ET/ES/DT model tags itself, so a DT inverter needs no configuration at all.
+# A DT inverter (grid-only: DT/MS/D-NS/XS and GE's GEP) has no battery, no work/EMS mode and
+# reports its export limit as a percentage rather than watts; see Goodwe_MQTT._supports_*.
+G2M_INVERTER_FAMILIES = ("", "ET", "EH", "BT", "BH", "ES", "EM", "BP", "DT", "MS", "D-NS", "XS")
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "mqtt": {
@@ -108,7 +116,7 @@ def override_config_from_env(config: Dict[str, Any], prefix: str = "G2M") -> Non
 def override_inverters_from_env(config: Dict[str, Any], prefix: str = "G2M") -> None:
     """Overrides inverter list from indexed environment variables."""
     inverter_pattern = re.compile(
-        rf"^{re.escape(prefix)}_GOODWE_INVERTERS_(\d+)_(SERIAL_NUMBER|IP_ADDRESS)$"
+        rf"^{re.escape(prefix)}_GOODWE_INVERTERS_(\d+)_(SERIAL_NUMBER|IP_ADDRESS|FAMILY)$"
     )
     inverters = config["goodwe"]["inverters"]
 
@@ -121,7 +129,7 @@ def override_inverters_from_env(config: Dict[str, Any], prefix: str = "G2M") -> 
         field_name = match.group(2).lower()
 
         while len(inverters) <= index:
-            inverters.append({"serial_number": "", "ip_address": ""})
+            inverters.append({"serial_number": "", "ip_address": "", "family": ""})
 
         inverters[index][field_name] = env_val
 
@@ -224,7 +232,8 @@ class Goodwe_MQTT:
         mqtt_runtime_data_interval_seconds: int,
         mqtt_fast_runtime_data_topic_postfix: str,
         mqtt_fast_runtime_data_interval_seconds: int,
-        mqtt_grid_export_limit_topic_postfix: str
+        mqtt_grid_export_limit_topic_postfix: str,
+        family: str = ""
     ) -> None:
         """Initializes the Goodwe_MQTT instance.
 
@@ -242,9 +251,12 @@ class Goodwe_MQTT:
             mqtt_fast_runtime_data_topic_postfix: Postfix for fast runtime data.
             mqtt_fast_runtime_data_interval_seconds: Polling interval for fast data.
             mqtt_grid_export_limit_topic_postfix: Postfix for export limit topic.
+            family: Inverter family for goodwe.connect(), e.g. "ET" or "DT". Empty (the
+                default) lets the library detect the family from the serial number.
         """
         self.serial_number = serial_number
         self.ip_address = ip_address
+        self.family = family
         self._confirm_tasks: Dict[str, "asyncio.Task"] = {}   # setting -> its pending confirmation
 
         self.mqtt_broker_ip = mqtt_broker_ip
@@ -276,6 +288,10 @@ class Goodwe_MQTT:
         self.inverter: Any = None
         self.runtime_data: Optional[Dict[str, Any]] = None
         self.operation_mode: Optional[Any] = None
+
+        # What the connected inverter turned out to support; filled in by connect_inverter().
+        self.family_name: str = ""            # e.g. "DT", as reported by the library's class
+        self.grid_export_limit_unit: str = "" # "W" (ET/grid-tied) or "%" (DT three-phase)
 
         log.info(str(self))
 
@@ -319,19 +335,98 @@ class Goodwe_MQTT:
         "ems_power_limit_watts": (EMS_POWER_LIMIT_MIN_WATTS, EMS_POWER_LIMIT_MAX_WATTS),
     }
 
+    # How long to wait before re-reading settings that failed to read (they are logged only, so a
+    # failure must not hold up the runtime data this daemon exists to publish)
+    SETTINGS_RETRY_INTERVAL = timedelta(minutes=5)
+
     # Postfix for the combined EMS mode + power limit state topic
     EMS_MODE_TOPIC_POSTFIX = "ems_mode"
 
     # EMS mode name → integer value mapping (from goodwe.inverter.EMSMode)
     EMS_MODE_OPTIONS: Dict[str, int] = {m.name: m.value for m in EMSMode}
 
+    # The inverter's advertised settings are the source of truth for what it supports, as in the
+    # HA integration: a DT inverter (grid-only) advertises neither the battery current limits nor
+    # work_mode/ems_mode, and it reports grid_export_limit in % rather than W. Reading a setting the
+    # inverter does not advertise raises ValueError, so a claim about one is checked first.
+    def _advertised_settings(self) -> Optional[set]:
+        """Ids of the settings the connected inverter advertises, or None when it cannot say."""
+        if self.inverter is None:
+            return None
+        try:
+            settings = self.inverter.settings()
+            if inspect.iscoroutine(settings):    # a mocked or misbehaving inverter
+                settings.close()
+                return None
+            return {s.id_ for s in settings}
+        except Exception as e:
+            log.debug(f'_advertised_settings {self.serial_number} unavailable: {e}')
+            return None
+
+    def _setting_unit(self, setting_id: str) -> str:
+        """Unit of an advertised setting, e.g. "W" or "%" for grid_export_limit."""
+        if self.inverter is None:
+            return ""
+        try:
+            return next((s.unit for s in self.inverter.settings() if s.id_ == setting_id), "")
+        except Exception:
+            return ""
+
+    def _advertises_setting(self, setting_id: str) -> bool:
+        """Whether the inverter advertises a setting. An inverter that cannot list its settings
+        (or none connected yet) is not treated as lacking anything."""
+        advertised = self._advertised_settings()
+        return advertised is None or setting_id in advertised
+
+    def _supports_battery(self) -> bool:
+        """DT/MS/D-NS/XS inverters are grid-only and have no battery to configure."""
+        return self._advertises_setting("battery_charge_current")
+
+    def _supports_work_mode(self) -> bool:
+        return self._advertises_setting("work_mode")
+
+    def _supports_ems_mode(self) -> bool:
+        return self._advertises_setting("ems_mode")
+
+    @property
+    def _grid_export_limit_is_percent(self) -> bool:
+        """DT three-phase inverters store the export limit as a percentage, not watts."""
+        return self.grid_export_limit_unit == "%"
+
+    # A DT three-phase inverter's export limit register holds a percentage of rated power, as the
+    # HA integration also allows (0-200%); everything else holds watts.
+    GRID_EXPORT_LIMIT_PERCENT_RANGE = (0, 200)
+
+    def _setting_range(self, setting_id: str) -> tuple[int, int]:
+        """Inclusive value range of a setting, which depends on the inverter's unit for export limits."""
+        if setting_id == 'grid_export_limit_watts' and self._grid_export_limit_is_percent:
+            return self.GRID_EXPORT_LIMIT_PERCENT_RANGE
+        return self._SETTING_RANGES[setting_id]
+
+    def _setting_supported(self, setting_id: str) -> bool:
+        """Whether the connected inverter supports a setting this bridge exposes, so that a command
+        for one it does not have (a battery current limit on a battery-less DT, say) is rejected
+        with an explanation rather than failing at the library."""
+        if self.inverter is None:
+            return False
+        # A command is rejected only when the inverter positively lacks the setting; an inverter
+        # that cannot list its settings (or a family whose names differ) keeps working as before.
+        if setting_id == 'work_mode':
+            return self._supports_work_mode()
+        if setting_id in ('ems_mode', 'ems_power_limit_watts'):
+            return self._supports_ems_mode()
+        if setting_id in ('battery_charge_current_limit_amps', 'battery_discharge_current_limit_amps'):
+            return self._supports_battery()
+        return self._advertises_setting(self._INVERTER_SETTING_ALIAS[setting_id])
+
 
     def __str__(self) -> str:
         interval_rt = int(self.mqtt_runtime_data_interval_seconds.total_seconds())
         interval_fast = int(self.mqtt_fast_runtime_data_interval_seconds.total_seconds())
+        family = self.family or "auto-detect"
         return (
             f"Goodwe_MQTT {self.serial_number} init\n"
-            f"  inverter:  ip={self.ip_address}\n"
+            f"  inverter:  ip={self.ip_address} family={family}\n"
             f"  broker:    ip={self.mqtt_broker_ip} port={self.mqtt_broker_port} user={self.mqtt_username}\n"
             f"  intervals: runtime_data={interval_rt}s  fast_runtime_data={interval_fast}s\n"
             f"  topics:    control={self.mqtt_control_topic}\n"
@@ -362,15 +457,31 @@ class Goodwe_MQTT:
     async def connect_inverter(self) -> Optional[Any]:
         """Connects to the GoodWe inverter.
 
+        The family comes from G2M_GOODWE_INVERTERS_<N>_FAMILY when set, and is otherwise left to
+        the library, which recognises the ET/ES/DT model tags in the serial number itself.
+
         Returns:
             The inverter object if connection is successful, None otherwise.
         """
-        log.info(f'Connecting to inverter {self.serial_number} at {self.ip_address}')
+        family = self.family or None
+        log.info(f'Connecting to inverter {self.serial_number} at {self.ip_address} '
+                 f'(family={self.family or "auto-detect"})')
         start_time = time.time()
         try:
-            self.inverter = await goodwe.connect(host=self.ip_address, family='ET')
+            # The library declares `family: str` but treats None as "detect it"; passing None is
+            # the documented path (goodwe.connect defaults the parameter to None itself).
+            self.inverter = await goodwe.connect(
+                host=self.ip_address, family=family)  # type: ignore[arg-type]
             connection_time = time.time() - start_time
-            log.info(f'Connected to inverter {self.serial_number} in {connection_time} seconds')
+            self.family_name = type(self.inverter).__name__
+            self.grid_export_limit_unit = self._setting_unit("grid_export_limit")
+            log.info(
+                f'Connected to inverter {self.serial_number} in {connection_time} seconds: '
+                f'{self.family_name} family, model={getattr(self.inverter, "model_name", "?")}, '
+                f'export limit unit={self.grid_export_limit_unit or "?"}, '
+                f'battery={self._supports_battery()}, work_mode={self._supports_work_mode()}, '
+                f'ems_mode={self._supports_ems_mode()}'
+            )
             return self.inverter
         except Exception as e:
             log.error(f'Failed to connect to inverter {self.serial_number} at {self.ip_address}: {e}')
@@ -380,11 +491,15 @@ class Goodwe_MQTT:
     async def send_mqtt_export_limit(self, grid_export_limit: int) -> None:
         """Publishes the current grid export limit to MQTT.
 
+        On a DT three-phase inverter the limit is a percentage of rated power rather than a number
+        of watts; the unit is published alongside the value so a consumer can tell them apart.
+
         Args:
             grid_export_limit: The numeric limit to publish.
         """
-        grid_export_limit_response = {
+        grid_export_limit_response: Dict[str, Any] = {
             'grid_export_limit_watts': grid_export_limit,
+            'unit': self.grid_export_limit_unit or "W",
             'serial_number': self.serial_number,
             'last_seen': get_timezone_aware_local_time().isoformat()
         }
@@ -475,9 +590,17 @@ class Goodwe_MQTT:
 
                         elif 'get_operation_mode' in data:
                             log.info(f'mqtt_client_task {self.serial_number} Getting operation mode')
+                            if not self._supports_work_mode():
+                                log.error(f'mqtt_client_task {self.serial_number} no operation mode: '
+                                          f'this {self.family_name or "connected"} inverter has none')
+                                continue
                             await self.get_operation_mode()
 
                         elif 'set_eco_discharge_percent' in data:
+                            if not self._supports_work_mode():
+                                log.error(f'mqtt_client_task {self.serial_number} no operation mode: '
+                                          f'this {self.family_name or "connected"} inverter has none')
+                                continue
                             try:
                                 power = int(data['set_eco_discharge_percent'])
                                 if 0 <= power <= 100:
@@ -492,6 +615,10 @@ class Goodwe_MQTT:
                                 log.error(f'mqtt_client_task {self.serial_number} Invalid payload: {e}')
 
                         elif 'set_eco_charge_percent' in data:
+                            if not self._supports_work_mode():
+                                log.error(f'mqtt_client_task {self.serial_number} no operation mode: '
+                                          f'this {self.family_name or "connected"} inverter has none')
+                                continue
                             try:
                                 power = int(data['set_eco_charge_percent'])
                                 soc = int(data['target_battery_soc_percent'])
@@ -508,6 +635,10 @@ class Goodwe_MQTT:
 
                         elif 'set_general_operation_mode' in data:
                             log.info(f'mqtt_client_task {self.serial_number} Setting general mode')
+                            if not self._supports_work_mode():
+                                log.error(f'mqtt_client_task {self.serial_number} no operation mode: '
+                                          f'this {self.family_name or "connected"} inverter has none')
+                                continue
                             try:
                                 await self.inverter.set_operation_mode(operation_mode=OperationMode.GENERAL)
                                 await self.get_operation_mode()
@@ -516,9 +647,17 @@ class Goodwe_MQTT:
 
                         elif 'get_ems_mode' in data:
                             log.info(f'mqtt_client_task {self.serial_number} Getting EMS mode')
+                            if not self._supports_ems_mode():
+                                log.error(f'mqtt_client_task {self.serial_number} no EMS mode: '
+                                          f'this {self.family_name or "connected"} inverter has none')
+                                continue
                             await self.get_ems_mode()
 
                         elif 'set_ems_mode' in data:
+                            if not self._supports_ems_mode():
+                                log.error(f'mqtt_client_task {self.serial_number} no EMS mode: '
+                                          f'this {self.family_name or "connected"} inverter has none')
+                                continue
                             try:
                                 mode_value = int(data['set_ems_mode'])
                                 ems_mode = EMSMode(mode_value)
@@ -615,6 +754,10 @@ class Goodwe_MQTT:
         if setting_id not in self._INVERTER_SETTING_ALIAS:
             log.error(f'handle_set_message {self.serial_number} rejected: {requested_id!r} is not a writable setting')
             return
+        if not self._setting_supported(setting_id):
+            log.error(f'handle_set_message {self.serial_number} rejected: {requested_id!r} is not '
+                      f'supported by this {self.family_name or "connected"} inverter')
+            return
         inverter_setting_id = self._INVERTER_SETTING_ALIAS[setting_id]
 
         # Determine the value to write
@@ -655,7 +798,7 @@ class Goodwe_MQTT:
             except ValueError:
                 log.error(f'handle_set_message {self.serial_number} invalid {setting_id} value: {payload_str}')
                 return
-            low, high = self._SETTING_RANGES[setting_id]
+            low, high = self._setting_range(setting_id)
             if not (low <= value <= high):
                 log.error(f'handle_set_message {self.serial_number} {setting_id} out of range {low}-{high}: {value}')
                 return
@@ -733,6 +876,10 @@ class Goodwe_MQTT:
         if setting_id not in self._INVERTER_SETTING_ALIAS:
             log.error(f'handle_get_message {self.serial_number} rejected: {requested_id!r} is not a readable setting')
             return
+        if not self._setting_supported(setting_id):
+            log.error(f'handle_get_message {self.serial_number} rejected: {requested_id!r} is not '
+                      f'supported by this {self.family_name or "connected"} inverter')
+            return
         await self.publish_setting_state(setting_id, requested_id)
 
     async def publish_setting_state(self, setting_id: str, requested_id: Optional[str] = None) -> None:
@@ -752,19 +899,27 @@ class Goodwe_MQTT:
             log.error(f'publish_setting_state {self.serial_number} read failed for {setting_id}: {e}')
 
     async def publish_ha_discovery(self) -> None:
-        """Publishes Home Assistant MQTT Discovery payloads for controllable entities."""
+        """Publishes Home Assistant MQTT Discovery payloads for controllable entities.
+
+        Only the entities the connected inverter supports are published: a DT inverter has no
+        battery and no work/EMS mode, so those entities would be dead in Home Assistant.
+        """
         sn = self.serial_number
         base = self.mqtt_topic_base
         device = {
             "identifiers": [sn],
             "name": f"GoodWe Inverter {sn}",
             "manufacturer": "GoodWe",
-            "model": "ET series",
+            "model": f"{self.family_name} series" if self.family_name else "GoodWe series",
         }
 
-        entities: List[Dict[str, Any]] = [
-            # work_mode – select
-            {
+        export_limit_unit = self.grid_export_limit_unit or "W"
+        export_low, export_high = self._setting_range("grid_export_limit_watts")
+
+        entities: List[Dict[str, Any]] = []
+
+        if self._supports_work_mode():
+            entities.append({
                 "component": "select",
                 "unique_id": f"{sn}_work_mode",
                 "name": "Operation Mode",
@@ -773,10 +928,12 @@ class Goodwe_MQTT:
                 "value_template": "{{ value_json.work_mode }}",
                 "options": list(self.WORK_MODE_OPTIONS.keys()),
                 "device": device,
-            },
+            })
+
+        if self._supports_battery():
             # battery_charge_current_limit_amps – number (unique_id kept from the old name, so the
             # Home Assistant entity and its history survive the rename)
-            {
+            entities.append({
                 "component": "number",
                 "unique_id": f"{sn}_battery_charge_current_amps",
                 "name": "Battery Charge Current Limit",
@@ -788,9 +945,9 @@ class Goodwe_MQTT:
                 "max": 25,
                 "step": 0.1,
                 "device": device,
-            },
+            })
             # battery_discharge_current_limit_amps – number
-            {
+            entities.append({
                 "component": "number",
                 "unique_id": f"{sn}_battery_discharge_current_limit_amps",
                 "name": "Battery Discharge Current Limit",
@@ -802,23 +959,26 @@ class Goodwe_MQTT:
                 "max": 25,
                 "step": 0.1,
                 "device": device,
-            },
-            # grid_export_limit_watts – number
-            {
-                "component": "number",
-                "unique_id": f"{sn}_grid_export_limit_watts",
-                "name": "Grid Export Limit",
-                "command_topic": f"{base}/set/grid_export_limit_watts",
-                "state_topic": f"{base}/state/grid_export_limit_watts",
-                "value_template": "{{ value_json.grid_export_limit_watts }}",
-                "unit_of_measurement": "W",
-                "min": 0,
-                "max": 10000,
-                "step": 1,
-                "device": device,
-            },
+            })
+
+        # grid_export_limit_watts – number. A DT three-phase inverter measures this in percent.
+        entities.append({
+            "component": "number",
+            "unique_id": f"{sn}_grid_export_limit_watts",
+            "name": "Grid Export Limit",
+            "command_topic": f"{base}/set/grid_export_limit_watts",
+            "state_topic": f"{base}/state/grid_export_limit_watts",
+            "value_template": "{{ value_json.grid_export_limit_watts }}",
+            "unit_of_measurement": export_limit_unit,
+            "min": export_low,
+            "max": export_high,
+            "step": 1,
+            "device": device,
+        })
+
+        if self._supports_ems_mode():
             # ems_mode – select
-            {
+            entities.append({
                 "component": "select",
                 "unique_id": f"{sn}_ems_mode",
                 "name": "EMS Mode",
@@ -827,9 +987,9 @@ class Goodwe_MQTT:
                 "value_template": "{{ value_json.ems_mode_name }}",
                 "options": list(self.EMS_MODE_OPTIONS.keys()),
                 "device": device,
-            },
+            })
             # ems_power_limit_watts – number
-            {
+            entities.append({
                 "component": "number",
                 "unique_id": f"{sn}_ems_power_limit_watts",
                 "name": "EMS Power Limit",
@@ -841,8 +1001,7 @@ class Goodwe_MQTT:
                 "max": self.EMS_POWER_LIMIT_MAX_WATTS,
                 "step": 100,
                 "device": device,
-            },
-        ]
+            })
 
         for entity in entities:
             component = entity.pop("component")
@@ -859,8 +1018,10 @@ class Goodwe_MQTT:
         """
         try:
             raw = await self.inverter.get_grid_export_limit()
-            # The goodwe library returns an unsigned 16-bit register value; reinterpret as signed.
-            if isinstance(raw, int) and raw >= 0x8000:
+            # The goodwe library returns an unsigned 16-bit register value; a negative watt limit
+            # is stored two's complement. A percentage (DT three-phase) is never negative, so it is
+            # left as read.
+            if not self._grid_export_limit_is_percent and isinstance(raw, int) and raw >= 0x8000:
                 raw = raw - 0x10000
             self.grid_export_limit = raw
             log.debug(f'get_grid_export_limit {self.serial_number}: {self.grid_export_limit}')
@@ -992,16 +1153,40 @@ class Goodwe_MQTT:
         """
         try:
             settings = await self.inverter.read_settings_data()
-            supported = {k: v for k, v in settings.items() if v is not None}
-            log.info(
-                f'read_settings_data {self.serial_number}: '
-                f'{len(supported)}/{len(settings)} settings supported: '
-                f'{json.dumps(supported, default=str)}'
-            )
-            return settings
         except Exception as e:
-            log.error(f'read_settings_data {self.serial_number} failed: {e}')
+            # The library's DT implementation reads its settings without the per-setting error
+            # tolerance its ET one has, so a single register the inverter does not implement (e.g.
+            # "shadow_scan_pv2", DT-only and absent on some models) aborts the whole call. Fall
+            # back to reading each advertised setting individually, as ET does.
+            log.info(f'read_settings_data {self.serial_number} bulk read failed ({e}); '
+                     'reading settings one by one')
+            settings = await self._read_settings_individually()
+            if settings is None:
+                log.error(f'read_settings_data {self.serial_number} failed: {e}')
+                return None
+        supported = {k: v for k, v in settings.items() if v is not None}
+        log.info(
+            f'read_settings_data {self.serial_number}: '
+            f'{len(supported)}/{len(settings)} settings supported: '
+            f'{json.dumps(supported, default=str)}'
+        )
+        return settings
+
+    async def _read_settings_individually(self) -> Optional[Dict[str, Any]]:
+        """Reads each setting the inverter advertises, tolerating the ones it rejects."""
+        try:
+            setting_ids = [s.id_ for s in self.inverter.settings()]
+        except Exception as e:
+            log.error(f'_read_settings_individually {self.serial_number} failed to list settings: {e}')
             return None
+        settings: Dict[str, Any] = {}
+        for setting_id in setting_ids:
+            try:
+                settings[setting_id] = await self.inverter.read_setting(setting_id)
+            except Exception as e:
+                log.debug(f'_read_settings_individually {self.serial_number} unsupported {setting_id}: {e}')
+                settings[setting_id] = None
+        return settings
 
     async def main_loop(self) -> None:
         """The main polling loop for retrieving and publishing inverter data."""
@@ -1017,11 +1202,15 @@ class Goodwe_MQTT:
                         continue
 
                 log.debug(f'main_loop {self.serial_number} requesting settings')
-                if await self.read_settings_data() is None:
-                    log.warning(f'main_loop {self.serial_number} Failed to read settings. Retrying in 5s...')
-                    await asyncio.sleep(5)
-                    continue
+                settings_read = await self.read_settings_data() is not None
+                if not settings_read:
+                    # A failed settings read used to block the loop entirely, which left a DT
+                    # inverter publishing nothing when one setting was unreadable. Runtime data is
+                    # what this daemon is for, so publish regardless and retry the settings below.
+                    log.warning(f'main_loop {self.serial_number} Failed to read settings; '
+                                'publishing runtime data and retrying the settings later')
 
+                next_settings_time = datetime.now() + self.SETTINGS_RETRY_INTERVAL
                 next_fast_runtime_data_time = datetime.now()
                 next_runtime_data_time = datetime.now()
 
@@ -1053,6 +1242,11 @@ class Goodwe_MQTT:
                         if now >= next_runtime_data_time:
                             next_runtime_data_time = now + self.mqtt_runtime_data_interval_seconds
                             await client.publish(self.mqtt_runtime_data_topic, payload=json.dumps(data))
+
+                        # Retry a failed settings read on a slow cadence, without holding up publishing
+                        if not settings_read and now >= next_settings_time:
+                            settings_read = await self.read_settings_data() is not None
+                            next_settings_time = now + self.SETTINGS_RETRY_INTERVAL
 
                         now = datetime.now()
                         if now < next_fast_runtime_data_time:
@@ -1458,7 +1652,8 @@ async def main(config: Dict[str, Any]) -> None:
             mqtt_runtime_data_interval_seconds=config["mqtt"]["runtime_data_interval_seconds"],
             mqtt_fast_runtime_data_topic_postfix=config["mqtt"]["fast_runtime_data_topic_postfix"],
             mqtt_fast_runtime_data_interval_seconds=config["mqtt"]["fast_runtime_data_interval_seconds"],
-            mqtt_grid_export_limit_topic_postfix=config["mqtt"]["grid_export_limit_topic_postfix"]
+            mqtt_grid_export_limit_topic_postfix=config["mqtt"]["grid_export_limit_topic_postfix"],
+            family=inverter_config.get("family", "")
         )
 
         await inv.connect_inverter()
@@ -1539,6 +1734,16 @@ def read_config(file_path: str) -> Dict[str, Any]:
                     "via G2M_GOODWE_INVERTERS_<index>_* environment variables."
                 )
                 sys.exit(1)
+            family = str(inverter.get("family", "") or "").strip().upper()
+            if family not in G2M_INVERTER_FAMILIES:
+                log.error(
+                    f"Invalid family {inverter.get('family')!r} for inverter "
+                    f"{inverter.get('serial_number')!r}: expected one of "
+                    f"{', '.join(f for f in G2M_INVERTER_FAMILIES if f)} or empty "
+                    "(empty = detect it from the serial number)."
+                )
+                sys.exit(1)
+            inverter["family"] = family
 
         return config
     except Exception as e:

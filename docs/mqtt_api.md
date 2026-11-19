@@ -24,10 +24,16 @@ By default, `<topic_prefix>` is `goodwe2mqtt`.
 
 ### 3. Grid Export Limit
 - **Topic:** `goodwe2mqtt/<serial>/grid_export_limit`
-- **Payload:** JSON object with current export limit.
+- **Payload:** JSON object with current export limit and the unit it is expressed in.
   ```json
-  {"grid_export_limit_watts": 5000, "serial_number": "...", "last_seen": "..."}
+  {"grid_export_limit_watts": 5000, "unit": "W", "serial_number": "...", "last_seen": "..."}
   ```
+
+> **A DT three-phase inverter measures this limit in percent, not watts.** Its register holds a
+> percentage of rated power (0–200%), and the payload then reads `"unit": "%"` — e.g.
+> `{"grid_export_limit_watts": 100, "unit": "%", ...}` for 100% of rated power. The topic and the
+> `/set/` name keep the `_watts` suffix on both families so existing consumers and Home Assistant
+> entities are unaffected; read the `unit` field to know what the number means.
 
 ### 4. Operation Mode
 - **Topic:** `goodwe2mqtt/<serial>/operation_mode`
@@ -115,11 +121,16 @@ value outside its range; nothing is written. (The goodwe library underneath woul
 setting it knows, and any raw Modbus register under the name `modbus<register>`; the bridge does
 not pass such names through.)
 
+A command is also rejected when the connected inverter does not have the setting at all: a
+grid-only DT/MS/D-NS/XS inverter has no battery and no work or EMS mode, so those topics are
+refused with a logged explanation instead of a library error. See
+[Supported Inverter Families](architecture.md#supported-inverter-families).
+
 | `setting_id` | Description | Payload type | Valid values |
 |---|---|---|---|
-| `work_mode` | Operation mode | string or integer | `"General mode"` (0), `"Off grid mode"` (1), `"Backup mode"` (2), `"Eco mode"` (3) - set through the goodwe library's full mode switch, see below |
-| `battery_charge_current_limit_amps` | Battery charge current **limit** (a setting, not the measured current) | number, 0.1 A steps | 0 – 25 (A) |
-| `battery_discharge_current_limit_amps` | Battery discharge current **limit** | number, 0.1 A steps | 0 – 25 (A) |
+| `work_mode` | Operation mode | string or integer | `"General mode"` (0), `"Off grid mode"` (1), `"Backup mode"` (2), `"Eco mode"` (3) - set through the goodwe library's full mode switch, see below. ET only |
+| `battery_charge_current_limit_amps` | Battery charge current **limit** (a setting, not the measured current) | number, 0.1 A steps | 0 – 25 (A). ET only |
+| `battery_discharge_current_limit_amps` | Battery discharge current **limit** | number, 0.1 A steps | 0 – 25 (A). ET only |
 
 `battery_charge_current_amps`, the old name of the charge limit, is still accepted on `/set/` and
 `/get/`; the state is then published under both names. The inverter stores the current limits in
@@ -131,9 +142,9 @@ take whole numbers.
 > 25 A is written, and the value falls to 0 A as the battery approaches its discharge safety limit.
 > Do not save a read-back value to restore it later: restoring a 0 read near an empty battery would
 > block discharging. Restore the configured value you intend (e.g. 25 A).
-| `grid_export_limit_watts` | Grid export power limit | integer | 0 – 10000 (W) |
-| `ems_mode` | EMS mode | string (name) or integer | `"BATTERY_STANDBY"`, `8`, etc. (see EMS Mode values above) |
-| `ems_power_limit_watts` | EMS power setpoint | integer | 0 – 15000 (W) |
+| `grid_export_limit_watts` | Grid export limit | integer | 0 – 10000 (W); on a DT three-phase inverter the register holds a percentage of rated power instead, so the range is 0 – 200 (%) |
+| `ems_mode` | EMS mode | string (name) or integer | `"BATTERY_STANDBY"`, `8`, etc. (see EMS Mode values above). ET only |
+| `ems_power_limit_watts` | EMS power setpoint | integer | 0 – 15000 (W). ET only |
 
 > **`work_mode` is never a raw register write.** goodwe2mqtt calls the goodwe library's
 > `set_operation_mode`, which for General mode also resets the EMS mode to AUTO with a power limit
@@ -193,14 +204,18 @@ The state topic payload is a JSON object:
 On startup the daemon publishes HA MQTT Discovery payloads so that the
 entities appear automatically in Home Assistant.
 
-| Entity | HA Component | Discovery topic |
-|---|---|---|
-| Operation Mode | `select` | `homeassistant/select/<serial>_work_mode/config` |
-| Battery Charge Current Limit | `number` | `homeassistant/number/<serial>_battery_charge_current_amps/config` (unique_id kept from the old name) |
-| Battery Discharge Current Limit | `number` | `homeassistant/number/<serial>_battery_discharge_current_limit_amps/config` |
-| Grid Export Limit | `number` | `homeassistant/number/<serial>_grid_export_limit_watts/config` |
-| EMS Mode | `select` | `homeassistant/select/<serial>_ems_mode/config` |
-| EMS Power Limit | `number` | `homeassistant/number/<serial>_ems_power_limit_watts/config` |
+| Entity | HA Component | Discovery topic | Families |
+|---|---|---|---|
+| Operation Mode | `select` | `homeassistant/select/<serial>_work_mode/config` | ET |
+| Battery Charge Current Limit | `number` | `homeassistant/number/<serial>_battery_charge_current_amps/config` (unique_id kept from the old name) | ET |
+| Battery Discharge Current Limit | `number` | `homeassistant/number/<serial>_battery_discharge_current_limit_amps/config` | ET |
+| Grid Export Limit | `number` | `homeassistant/number/<serial>_grid_export_limit_watts/config` | all |
+| EMS Mode | `select` | `homeassistant/select/<serial>_ems_mode/config` | ET |
+| EMS Power Limit | `number` | `homeassistant/number/<serial>_ems_power_limit_watts/config` | ET |
+
+Only the entities the connected inverter supports are published. An ET inverter gets all six; a
+grid-only DT inverter gets a single Grid Export Limit entity (with `%` as its unit and a 0–200 range)
+rather than dead entities for settings it does not have.
 
 ---
 

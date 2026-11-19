@@ -34,6 +34,13 @@ G2M_GOODWE_INVERTERS_0_IP_ADDRESS=192.168.1.100
 
 Add more inverters by increasing the index (`_1_`, `_2_`, ...).
 
+The inverter family (ET, ES, DT, or the equivalent names) normally needs no configuration: it is
+detected from the serial number. Set `G2M_GOODWE_INVERTERS_<index>_FAMILY` only to pin one:
+
+```bash
+G2M_GOODWE_INVERTERS_0_FAMILY=ET      # only if auto-detection picks the wrong family
+```
+
 ### 2a. Start — daemon only (recommended for existing setups)
 
 Use this when you already have an MQTT broker (Home Assistant, standalone Mosquitto, etc.):
@@ -152,11 +159,27 @@ Configuration is provided via environment variables using the `G2M_<SECTION>_<KE
 | `G2M_MQTT_USERNAME` | `mqtt.username` | MQTT Username |
 | `G2M_MQTT_PASSWORD` | `mqtt.password` | MQTT Password |
 
+### Polling Intervals
+
+These apply to every inverter in the process (they are not per-inverter) and to every
+family, ET and DT alike.
+
+| Variable | Config Path | Default | Description |
+|----------|-----------|---------|-------------|
+| `G2M_MQTT_FAST_RUNTIME_DATA_INTERVAL_SECONDS` | `mqtt.fast_runtime_data_interval_seconds` | `1` | How often the inverter is polled. The same reading is also published to `.../fast_runtime_data`. |
+| `G2M_MQTT_RUNTIME_DATA_INTERVAL_SECONDS` | `mqtt.runtime_data_interval_seconds` | `5` | How often the same reading is also published to `.../runtime_data`. Publication only; it does not cause extra reads. |
+
+The read rate is set by the fast interval alone: the loop polls once per iteration and sleeps
+until the next fast interval, so `1` means one poll per second. Setting the fast interval to `0`
+does not stop polling — it skips the `.../fast_runtime_data` topic and the loop polls at the
+runtime interval instead. A failed read retries after 5 seconds regardless of these settings.
+
 ### Inverter Overrides
 
 For lists like inverters, use the index:
 - `G2M_GOODWE_INVERTERS_0_IP_ADDRESS`
 - `G2M_GOODWE_INVERTERS_0_SERIAL_NUMBER`
+- `G2M_GOODWE_INVERTERS_0_FAMILY` (optional; detected from the serial number when unset)
 
 ## Security
 
