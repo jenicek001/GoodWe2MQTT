@@ -21,6 +21,7 @@ import re
 from logger import log
 from goodwe.inverter import OperationMode, EMSMode
 import sec1000s_protocol
+import device_status
 
 config_file = ".env"
 
@@ -38,6 +39,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "fast_runtime_data_interval_seconds": 1,
         "control_topic_postfix": "control",
         "grid_export_limit_topic_postfix": "grid_export_limit",
+        # Home Assistant MQTT discovery prefix for the read-only status announcement (empty: none)
+        "ha_discovery_prefix": "homeassistant",
     },
     "goodwe": {
         "inverters": []
@@ -224,7 +227,8 @@ class Goodwe_MQTT:
         mqtt_runtime_data_interval_seconds: int,
         mqtt_fast_runtime_data_topic_postfix: str,
         mqtt_fast_runtime_data_interval_seconds: int,
-        mqtt_grid_export_limit_topic_postfix: str
+        mqtt_grid_export_limit_topic_postfix: str,
+        ha_discovery_prefix: str = "homeassistant",
     ) -> None:
         """Initializes the Goodwe_MQTT instance.
 
@@ -245,6 +249,8 @@ class Goodwe_MQTT:
         """
         self.serial_number = serial_number
         self.ip_address = ip_address
+        self.ha_discovery_prefix = ha_discovery_prefix
+        self.last_read_ok: Optional[float] = None             # monotonic time of the last good runtime read
         self._confirm_tasks: Dict[str, "asyncio.Task"] = {}   # setting -> its pending confirmation
 
         self.mqtt_broker_ip = mqtt_broker_ip
@@ -339,19 +345,34 @@ class Goodwe_MQTT:
             f"             grid_export_limit={self.grid_export_limit_topic}"
         )
 
+    def status_announcements(self):
+        """The read-only discovery of this inverter with its status (REQ-081): PV power, no command topic."""
+        return device_status.status_discovery(
+            self.ha_discovery_prefix, self.serial_number, f"GoodWe Inverter {self.serial_number}", "ET series",
+            self.mqtt_runtime_data_topic, "ppv", "W", "power", self.status_topic)
+
+    def device_state(self) -> str:
+        window = device_status.window_s(self.mqtt_runtime_data_interval_seconds.total_seconds())
+        return device_status.device_state(self.last_read_ok, time.monotonic(), window)
+
     async def heartbeat_task(self) -> None:
-        """Periodically publishes an 'online' status to the MQTT broker."""
+        """The inverter's own status, retained: online while it was read within its window, offline when not, and
+        offline as this client's last will when goodwe2mqtt is gone (SmartHomeDesign-EMS REQ-081)."""
         log.info(f'heartbeat_task {self.serial_number} started')
         while True:
             try:
                 async with aiomqtt.Client(
                     self.mqtt_broker_ip, self.mqtt_broker_port,
-                    username=self.mqtt_username, password=self.mqtt_password
+                    username=self.mqtt_username, password=self.mqtt_password,
+                    will=aiomqtt.Will(self.status_topic, device_status.OFFLINE, qos=1, retain=True)
                 ) as client:
                     log.info(f'heartbeat_task {self.serial_number} connected to MQTT broker')
+                    for topic, payload in self.status_announcements():
+                        await client.publish(topic, payload=payload, qos=1, retain=True)
                     while True:
-                        log.debug(f'heartbeat_task {self.serial_number} sending heartbeat')
-                        await client.publish(self.status_topic, payload=json.dumps("online"))
+                        state = self.device_state()
+                        log.debug(f'heartbeat_task {self.serial_number} status {state}')
+                        await client.publish(self.status_topic, payload=state, qos=1, retain=True)
                         await asyncio.sleep(30)
             except asyncio.CancelledError:
                 break
@@ -964,6 +985,7 @@ class Goodwe_MQTT:
                 self.runtime_data['serial_number'] = self.serial_number
                 self.runtime_data['last_seen'] = get_timezone_aware_local_time().isoformat()
                 self.runtime_data['request_processing_time'] = time.time() - start_time
+                self.last_read_ok = time.monotonic()
                 return self.runtime_data
             return None
         except Exception as e:
@@ -1091,8 +1113,11 @@ class SEC1000S_MQTT:
         mqtt_username: Optional[str],
         mqtt_password: Optional[str],
         mqtt_topic_prefix: str,
+        ha_discovery_prefix: str = "homeassistant",
     ) -> None:
         self.serial_number = serial_number
+        self.ha_discovery_prefix = ha_discovery_prefix
+        self.last_read_ok: Optional[float] = None             # monotonic time of the last good telemetry read
         self.host = host
         self.port = port
         self.timeout = timeout
@@ -1142,18 +1167,32 @@ class SEC1000S_MQTT:
             f"             grid_export_limit={self.grid_export_limit_topic}"
         )
 
+    def status_announcements(self):
+        """The read-only discovery of this SEC1000S with its status (REQ-081): grid power, no command topic."""
+        return device_status.status_discovery(
+            self.ha_discovery_prefix, f"sec1000s_{self.serial_number}", f"GoodWe SEC1000S {self.serial_number}",
+            "SEC1000S", self.telemetry_topic, "meters_power_watts", "W", "power", self.status_topic)
+
+    def device_state(self) -> str:
+        window = device_status.window_s(self.telemetry_interval_seconds)
+        return device_status.device_state(self.last_read_ok, time.monotonic(), window)
+
     async def heartbeat_task(self) -> None:
-        """Periodically publishes 'online' status to the MQTT broker."""
+        """The SEC1000S's own status, retained: online while its telemetry was read within its window, offline when
+        not, and offline as this client's last will when goodwe2mqtt is gone (SmartHomeDesign-EMS REQ-081)."""
         log.info(f"sec1000s heartbeat_task {self.serial_number} started")
         while True:
             try:
                 async with aiomqtt.Client(
                     self.mqtt_broker_ip, self.mqtt_broker_port,
-                    username=self.mqtt_username, password=self.mqtt_password
+                    username=self.mqtt_username, password=self.mqtt_password,
+                    will=aiomqtt.Will(self.status_topic, device_status.OFFLINE, qos=1, retain=True)
                 ) as client:
                     log.info(f"sec1000s heartbeat_task {self.serial_number} connected")
+                    for topic, payload in self.status_announcements():
+                        await client.publish(topic, payload=payload, qos=1, retain=True)
                     while True:
-                        await client.publish(self.status_topic, payload=json.dumps("online"))
+                        await client.publish(self.status_topic, payload=self.device_state(), qos=1, retain=True)
                         await asyncio.sleep(30)
             except asyncio.CancelledError:
                 break
@@ -1167,6 +1206,7 @@ class SEC1000S_MQTT:
         while True:
             try:
                 data = await sec1000s_protocol.get_telemetry(self.host, self.port, self.timeout)
+                self.last_read_ok = time.monotonic()
                 data["serial_number"] = self.serial_number
                 data["last_seen"] = get_timezone_aware_local_time().isoformat()
                 await self.send_mqtt_response(self.telemetry_topic, data)
@@ -1458,7 +1498,8 @@ async def main(config: Dict[str, Any]) -> None:
             mqtt_runtime_data_interval_seconds=config["mqtt"]["runtime_data_interval_seconds"],
             mqtt_fast_runtime_data_topic_postfix=config["mqtt"]["fast_runtime_data_topic_postfix"],
             mqtt_fast_runtime_data_interval_seconds=config["mqtt"]["fast_runtime_data_interval_seconds"],
-            mqtt_grid_export_limit_topic_postfix=config["mqtt"]["grid_export_limit_topic_postfix"]
+            mqtt_grid_export_limit_topic_postfix=config["mqtt"]["grid_export_limit_topic_postfix"],
+            ha_discovery_prefix=config["mqtt"]["ha_discovery_prefix"],
         )
 
         await inv.connect_inverter()
@@ -1498,6 +1539,7 @@ async def main(config: Dict[str, Any]) -> None:
             mqtt_username=config["mqtt"].get("username"),
             mqtt_password=config["mqtt"].get("password"),
             mqtt_topic_prefix=config["mqtt"]["topic_prefix"],
+            ha_discovery_prefix=config["mqtt"]["ha_discovery_prefix"],
         )
         sec1000s_devices.append(sec)
         log.info(f'main spawned SEC1000S_MQTT {sec_cfg["serial_number"]}')
