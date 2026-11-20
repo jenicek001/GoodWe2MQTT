@@ -43,10 +43,13 @@ By default, `<topic_prefix>` is `goodwe2mqtt`.
   {"ems_mode": 8, "ems_mode_name": "BATTERY_STANDBY", "ems_power_limit_watts": 0, "serial_number": "...", "last_seen": "..."}
   ```
 
-### 6. Daemon Status (Heartbeat)
-- **Topic:** `goodwe2mqtt/<serial>/status`
-- **Payload:** `"online"` (JSON string)
+### 6. Device Status
+- **Topic:** `goodwe2mqtt/<serial>/status`, **retained**
+- **Payload:** `online` while the inverter was read within three runtime intervals (at least 60 s); `offline` when it
+  was not; `offline` as goodwe2mqtt's MQTT last will when goodwe2mqtt itself is gone. Plain text, not JSON.
 - **Interval:** 30 seconds
+- Until 2026-11-20 this was a JSON `"online"` every 30 s, sent even while the inverter could not be read, and never
+  `offline`. A consumer of the old payload must read plain `online` / `offline` now.
 
 ---
 
@@ -190,8 +193,15 @@ The state topic payload is a JSON object:
 
 ### 3. Home Assistant MQTT Discovery
 
-On startup the daemon publishes HA MQTT Discovery payloads so that the
-entities appear automatically in Home Assistant.
+**Published (read-only):** on every connection, retained, one sensor per device with the device's status as its
+availability and **no command topic**: the inverter's PV power (`homeassistant/sensor/<serial>/ppv/config`, from
+`runtime_data`) and the SEC1000S's grid power (`homeassistant/sensor/sec1000s_<serial>/meters_power_watts/config`,
+from `telemetry`). A monitor that reads discovery (Home Assistant, the SmartHomeDesign EMS edge, REQ-081) finds each
+device and whether it is online; nothing gains control. Prefix: `mqtt.ha_discovery_prefix`
+(`G2M_MQTT_HA_DISCOVERY_PREFIX`, default `homeassistant`; empty: none).
+
+**Not published:** the controllable entities below (`publish_ha_discovery()`). The method exists but nothing calls it;
+publishing it would give any Home Assistant on the broker control of the batteries and the export limit.
 
 | Entity | HA Component | Discovery topic |
 |---|---|---|
@@ -215,7 +225,7 @@ where `<serial_number>` is set via `G2M_SEC1000S_<N>_SERIAL_NUMBER`.
 |---|---|---|
 | `goodwe2mqtt/sec1000s/<serial_number>/grid_export_limit` | `grid_export_limit_interval_seconds` | `{"control_mode": 3, "total_capacity_watts": 14000, "grid_export_limit_watts": 2500, "serial_number": "...", "effective_ceiling_watts": 9000, "last_seen": "..."}` |
 | `goodwe2mqtt/sec1000s/<serial_number>/telemetry` | `telemetry_interval_seconds` | `{"v1": 240.0, ..., "meters_power_watts": 3084, "serial_number": "...", "last_seen": "..."}` |
-| `goodwe2mqtt/sec1000s/<serial_number>/status` | 30 s | `"online"` |
+| `goodwe2mqtt/sec1000s/<serial_number>/status` | 30 s, retained | `online` while its telemetry was read within three telemetry intervals (at least 60 s), `offline` when not, `offline` as the last will |
 
 ### Control Topic
 
